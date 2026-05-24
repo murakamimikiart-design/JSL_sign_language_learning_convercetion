@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JSL 指文字認識 学習版</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d0d1a;
+      color: #e8e8f0;
+      font-family: 'Hiragino Sans', 'Meiryo', 'Yu Gothic', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+      gap: 20px;
+    }
+
+    header {
+      text-align: center;
+    }
+    header h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #a5f3e8;
+    }
+    header p {
+      font-size: 0.82rem;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+
+    .mode-toggle {
+      display: flex;
+      gap: 8px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      padding: 4px;
+    }
+    .mode-btn {
+      background: none;
+      border: none;
+      color: #6b7280;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+    }
+    .mode-btn.active {
+      background: #4ECDC4;
+      color: #0d0d1a;
+      font-weight: 600;
+    }
+
+    .main-layout {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .camera-panel {
+      position: relative;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 0 0 1px rgba(165,243,232,0.15), 0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    #video { display: none; }
+
+    #canvas {
+      display: block;
+      width: 480px;
+      height: 360px;
+    }
+
+    #status-badge {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(0,0,0,0.65);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 0.78rem;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      backdrop-filter: blur(6px);
+    }
+    #status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f59e0b;
+      flex-shrink: 0;
+    }
+    #status-dot.ready { background: #22c55e; animation: pulse 2s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .result-panel {
+      width: 240px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      padding: 16px;
+    }
+
+    .card-label {
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      color: #6b7280;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    #current-char {
+      font-size: 96px;
+      line-height: 1;
+      color: #a5f3e8;
+      font-weight: 700;
+      text-align: center;
+      min-height: 110px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-shadow: 0 0 30px rgba(165,243,232,0.4);
+    }
+
+    /* 記録モード UI */
+    .record-mode {
+      display: none;
+    }
+    .record-mode.active {
+      display: block;
+    }
+
+    .record-input-group {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    #record-char-input {
+      flex: 1;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: #e8e8f0;
+      padding: 8px;
+      font-size: 0.9rem;
+      transition: border-color 0.2s;
+    }
+    #record-char-input::placeholder {
+      color: #6b7280;
+    }
+    #record-char-input:focus {
+      outline: none;
+      border-color: #4ECDC4;
+    }
+
+    .btn {
+      background: #4ECDC4;
+      border: none;
+      color: #0d0d1a;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .training-stats {
+      font-size: 0.75rem;
+      color: #6b7280;
+      line-height: 1.6;
+    }
+
+    .training-stats strong {
+      color: #a5f3e8;
+    }
+
+    .clear-btn {
+      margin-top: 8px;
+      background: none;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      color: #6b7280;
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      width: 100%;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .clear-btn:hover { border-color: #ef4444; color: #ef4444; }
+
+    .note {
+      font-size: 0.68rem;
+      color: #4b5563;
+      text-align: center;
+      line-height: 1.5;
+      max-width: 720px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>JSL 指文字認識 学習版</h1>
+  <p>あなたの動きから学習して、より正確に認識します</p>
+</header>
+
+<div class="mode-toggle">
+  <button class="mode-btn active" data-mode="recognize">🔍 認識モード</button>
+  <button class="mode-btn" data-mode="record">📝 記録モード</button>
+</div>
+
+<div class="main-layout">
+
+  <div class="camera-panel">
+    <video id="video" playsinline></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <div id="status-badge">
+      <div id="status-dot"></div>
+      <span id="status-text">モデル読み込み中…</span>
+    </div>
+  </div>
+
+  <div class="result-panel">
+
+    <div class="card">
+      <div class="card-label">認識中の文字</div>
+      <div id="current-char">—</div>
+    </div>
+
+    <div class="card recognize-mode">
+      <div class="card-label">文字起こし</div>
+      <div id="history-text" style="min-height: 60px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 6px; font-size: 1.2rem; line-height: 1.6; word-break: break-all;"></div>
+      <div style="display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap;">
+        <button class="btn" onclick="addSpace()" style="flex: 1; background: #475569; padding: 6px;">␣ 空白</button>
+        <button class="btn" onclick="backspaceChar()" style="flex: 1; background: #475569; padding: 6px;">⌫ 削除</button>
+      </div>
+      <div style="display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap;">
+        <button class="btn" onclick="copyHistory()" style="flex: 1; background: #4ECDC4; color: #0d0d1a; padding: 6px;">📋 コピー</button>
+        <button class="btn" onclick="saveHistoryAsText()" style="flex: 1; background: #8b5cf6; padding: 6px;">💾 保存</button>
+        <button class="btn clear-btn" onclick="clearHistory()" style="flex: 1; padding: 6px;">クリア</button>
+      </div>
+      <div style="display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap;">
+        <button class="btn" id="speak-btn" onclick="speakHistory()" style="flex: 1; background: #f59e0b; color: #0d0d1a; padding: 6px;">🔊 読み上げ</button>
+        <button class="btn" onclick="stopSpeaking()" style="flex: 1; background: #475569; padding: 6px;">⏹ 停止</button>
+      </div>
+      <div style="font-size: 0.7rem; color: #6b7280; margin-top: 6px;">
+        同じ文字を約2秒間維持すると確定し、声出しします
+      </div>
+    </div>
+
+    <div class="card record-mode">
+      <div class="card-label">新規記録</div>
+      <div class="record-input-group">
+        <input id="record-char-input" type="text" placeholder="あ" maxlength="2">
+        <button class="btn" id="record-btn" onclick="startRecording()">記録</button>
+      </div>
+      <div id="recording-status" style="display: none; text-align: center; margin: 10px 0;">
+        <div style="font-size: 2rem; font-weight: bold; color: #7effa0;">🎥</div>
+        <div style="font-size: 0.9rem; color: #a5f3e8; margin-top: 4px;">
+          記録中... <span id="frame-count">0</span>フレーム
+        </div>
+      </div>
+      <div class="training-stats" id="training-stats"></div>
+      <button class="btn" onclick="exportTrainingData()" style="width: 100%; margin-top: 8px; background: #8b5cf6;">
+        📥 データエクスポート
+      </button>
+      <button class="btn" onclick="document.getElementById('import-file').click()" style="width: 100%; margin-top: 4px; background: #6366f1;">
+        📤 ローカルJSONを読込
+      </button>
+      <input type="file" id="import-file" accept=".json" style="display: none;">
+
+      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+        <div class="card-label">特定文字をエクスポート</div>
+        <div class="record-input-group">
+          <input id="export-chars-input" type="text" placeholder="あいうえお" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #e8e8f0; padding: 8px; font-size: 0.9rem; flex: 1;">
+          <button class="btn" onclick="exportSelectedChars()" style="background: #8b5cf6;">
+            保存
+          </button>
+        </div>
+        <div style="font-size: 0.7rem; color: #6b7280; margin-top: 4px;">
+          複数文字をまとめて入力可（例：あいう）
+        </div>
+      </div>
+
+      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+        <div class="card-label">特定文字を削除</div>
+        <div class="record-input-group">
+          <input id="delete-char-input" type="text" placeholder="ね" maxlength="2" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #e8e8f0; padding: 8px; font-size: 0.9rem; flex: 1;">
+          <button class="btn btn-danger" onclick="deleteCharData()" style="background: #ef4444;">
+            削除
+          </button>
+        </div>
+      </div>
+
+      <button class="btn btn-danger" onclick="clearAllTrainingData()" style="width: 100%; margin-top: 8px;">
+        全データリセット
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<p class="note">
+  ※ 記録モード：同じ文字を複数回記録するほど認識精度が上がります。<br>
+  認識モード：距離ベース学習と従来ルールの組み合わせで判定します。
+</p>
+
+<script>
+// ── DOM & STATE ────────────────────────────────────────────────────────────
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const elChar = document.getElementById('current-char');
+const elStatusDot = document.getElementById('status-dot');
+const elStatusTxt = document.getElementById('status-text');
+const elHistory = document.getElementById('history-text');
+const recordCharInput = document.getElementById('record-char-input');
+const trainingStatsEl = document.getElementById('training-stats');
+
+canvas.width = 640;
+canvas.height = 480;
+
+let currentMode = 'recognize'; // 'recognize' or 'record'
+let trainingData = {}; // { char: [ [frame1, frame2, ...], [frame1, ...] ] }
+let currentLandmarks = null;
+let lastRecognizedChar = '—';
+let lastRecognizeTime = 0;
+let enterPressCount = 0;
+
+// 動画記録用
+let recordingChar = null;
+let recordStartTime = null;
+let frameBuffer = [];
+const RECORD_DURATION = 1000; // 1秒（ミリ秒）
+
+// ── モード切り替え ────────────────────────────────────────────────────────
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMode = btn.dataset.mode;
+
+    document.querySelectorAll('.recognize-mode').forEach(el =>
+      el.style.display = currentMode === 'recognize' ? 'block' : 'none');
+    document.querySelectorAll('.record-mode').forEach(el =>
+      el.style.display = currentMode === 'record' ? 'block' : 'none');
+
+    if (currentMode === 'record') updateTrainingStats();
+  });
+});
+
+// ── Training Data Management ───────────────────────────────────────────────
+function loadTrainingData() {
+  const stored = localStorage.getItem('jslTrainingData');
+  trainingData = stored ? JSON.parse(stored) : {};
+}
+
+function saveTrainingData() {
+  try {
+    localStorage.setItem('jslTrainingData', JSON.stringify(trainingData));
+  } catch (e) {
+    if (e.name === 'QuotaExceededError') {
+      console.warn('localStorage容量超過。データは記録されましたが、ブラウザに保存されていません。エクスポートで保存してください。');
+      // 容量警告を1度だけ表示
+      if (!window._quotaWarned) {
+        window._quotaWarned = true;
+        alert('⚠️ ブラウザ保存容量を超えました\n\nデータは認識用には使えますが、リロードすると消えます。\n「📥 データエクスポート」で必ずJSON保存してください。');
+      }
+    } else {
+      console.error('保存エラー:', e);
+    }
+  }
+}
+
+let recordingInProgress = false;
+let recordingTimer = null;
+
+function startRecording() {
+  const char = recordCharInput.value.trim();
+  if (!char) {
+    alert('文字を入力してください');
+    return;
+  }
+
+  if (recordingInProgress) return;
+
+  recordingInProgress = true;
+  const recordBtn = document.getElementById('record-btn');
+  const statusEl = document.getElementById('recording-status');
+  const frameCountEl = document.getElementById('frame-count');
+
+  recordBtn.disabled = true;
+  recordBtn.textContent = '記録中...';
+  statusEl.style.display = 'block';
+  recordCharInput.disabled = true;
+
+  // 3秒カウントダウン後に記録開始
+  let count = 3;
+
+  const countdownInterval = setInterval(() => {
+    if (count > 0) {
+      recordBtn.textContent = `${count}秒待機...`;
+      count--;
+    } else {
+      clearInterval(countdownInterval);
+      recordFrame(char);
+
+      // 1秒間の動画フレーム記録が開始
+      // フレームカウント表示の更新
+      recordingTimer = setInterval(() => {
+        frameCountEl.textContent = frameBuffer.length;
+      }, 50);
+
+      // 記録完了時の処理
+      const completionCheck = setInterval(() => {
+        if (!recordingChar) {
+          // 記録完了
+          clearInterval(completionCheck);
+          clearInterval(recordingTimer);
+          recordingInProgress = false;
+          recordBtn.disabled = false;
+          recordBtn.textContent = '記録';
+          statusEl.style.display = 'none';
+          recordCharInput.disabled = false;
+          recordCharInput.focus();
+        }
+      }, 100);
+    }
+  }, 1000);
+}
+
+function recordFrame(char) {
+  if (!currentLandmarks) {
+    alert('手が検出されていません');
+    return;
+  }
+
+  // 1秒間の動画フレーム記録開始
+  recordingChar = char;
+  recordStartTime = Date.now();
+  frameBuffer = [];
+
+  console.log(`🎥 Recording: "${char}" for 1 second...`);
+}
+
+function updateTrainingStats() {
+  let html = '';
+  const entries = Object.entries(trainingData).sort();
+  for (const [char, samples] of entries) {
+    html += `<div><strong>${char}</strong>: ${samples.length}サンプル</div>`;
+  }
+  if (entries.length === 0) html = '<div style="color: #6b7280;">記録なし</div>';
+  trainingStatsEl.innerHTML = html;
+}
+
+function deleteCharData() {
+  const char = document.getElementById('delete-char-input').value.trim();
+  if (!char) {
+    alert('削除する文字を入力してください');
+    return;
+  }
+
+  if (!trainingData[char]) {
+    alert(`「${char}」のデータはありません`);
+    return;
+  }
+
+  if (confirm(`「${char}」のデータを削除しますか？\n${trainingData[char].length}個のサンプルが削除されます`)) {
+    delete trainingData[char];
+    saveTrainingData();
+    updateTrainingStats();
+    document.getElementById('delete-char-input').value = '';
+    alert(`✅ 「${char}」のデータを削除しました`);
+  }
+}
+
+function clearAllTrainingData() {
+  if (confirm('すべてのトレーニングデータを削除しますか？')) {
+    trainingData = {};
+    localStorage.removeItem('jslTrainingData');
+    updateTrainingStats();
+  }
+}
+
+// ── Distance-based Classifier ──────────────────────────────────────────────
+function euclideanDistance(lm1, lm2) {
+  let sum = 0;
+  for (let i = 0; i < lm1.length; i++) {
+    const a = lm1[i], b = lm2[i];
+    const x1 = Array.isArray(a) ? a[0] : a.x;
+    const y1 = Array.isArray(a) ? a[1] : a.y;
+    const x2 = Array.isArray(b) ? b[0] : b.x;
+    const y2 = Array.isArray(b) ? b[1] : b.y;
+    sum += (x1 - x2) ** 2 + (y1 - y2) ** 2;
+  }
+  return Math.sqrt(sum);
+}
+
+// 動画フレーム列間の距離（簡易版：フレーム数を合わせて平均距離を計算）
+function videoDistance(frames1, frames2) {
+  const len1 = frames1.length;
+  const len2 = frames2.length;
+  const minLen = Math.min(len1, len2);
+
+  let totalDist = 0;
+  for (let i = 0; i < minLen; i++) {
+    totalDist += euclideanDistance(frames1[i], frames2[i]);
+  }
+
+  // フレーム数が異なる場合はペナルティ
+  const avgDist = minLen > 0 ? totalDist / minLen : Infinity;
+  const framePenalty = Math.abs(len1 - len2) * 0.1;
+
+  return avgDist + framePenalty;
+}
+
+function classifyByLearning(currentFrame) {
+  try {
+    let bestChar = null;
+    let bestDistance = Infinity;
+
+    let hasVideoData = false;
+    for (const char in trainingData) {
+      const samples = trainingData[char];
+      if (!Array.isArray(samples) || samples.length === 0) continue;
+
+      if (Array.isArray(samples[0]) && samples[0].length > 1) {
+        hasVideoData = true;
+        const recentSamples = samples.slice(-5);
+        let charBestDist = Infinity;
+
+        for (const videoFrames of recentSamples) {
+          if (!Array.isArray(videoFrames) || videoFrames.length === 0) continue;
+          // 全フレームと比較して最小距離を取る（最後のフレームだけでなく）
+          for (const frame of videoFrames) {
+            if (!Array.isArray(frame) || frame.length !== currentFrame.length) continue;
+            const dist = euclideanDistance(currentFrame, frame);
+            if (dist < charBestDist) charBestDist = dist;
+          }
+        }
+
+        if (charBestDist < bestDistance) {
+          bestDistance = charBestDist;
+          bestChar = char;
+        }
+      }
+    }
+
+    // 動画データがない場合は従来の単一フレーム比較（最近5サンプル）
+    if (!hasVideoData) {
+      for (const char in trainingData) {
+        const samples = trainingData[char];
+        if (!Array.isArray(samples) || samples.length === 0) continue;
+        const recentSamples = samples.slice(-5);
+        for (const sample of recentSamples) {
+          if (!Array.isArray(sample) || sample.length !== currentFrame.length) continue;
+          const dist = euclideanDistance(currentFrame, sample);
+          if (dist < bestDistance) {
+            bestDistance = dist;
+            bestChar = char;
+          }
+        }
+      }
+    }
+
+    if (bestChar && bestDistance < 0.35) return bestChar;
+    return classifyByRules(currentFrame);
+  } catch (err) {
+    console.error('classifyByLearning error:', err);
+    return classifyByRules(currentFrame);
+  }
+}
+
+// ── Rule-based Classifier (Fallback) ───────────────────────────────────────
+function getStates(lm) {
+  const index = lm[8].y < lm[6].y && lm[6].y < lm[5].y;
+  const middle = lm[12].y < lm[10].y && lm[10].y < lm[9].y;
+  const ring = lm[16].y < lm[14].y && lm[14].y < lm[13].y;
+  const pinky = lm[20].y < lm[18].y && lm[18].y < lm[17].y;
+  const thumbDist = Math.abs(lm[4].x - lm[2].x);
+  const thumb = thumbDist > 0.07;
+  return { thumb, index, middle, ring, pinky };
+}
+
+function classifyByRules(lm) {
+  const st = getStates(lm);
+  const handDx = lm[9].x - lm[0].x;
+  const handDy = lm[9].y - lm[0].y;
+  const isHandVertical = Math.abs(handDy) > Math.abs(handDx);
+
+  const { thumb, index, middle, ring, pinky } = st;
+
+  if (!index && !middle && !ring && pinky) return 'い';
+  if (index && middle && !ring && !pinky) return 'う';
+  if (index && !middle && !ring && pinky) return 'き';
+  if (thumb && index && !middle && !ring && !pinky) return isHandVertical ? 'か' : 'し';
+  if (index && middle && ring && pinky) return isHandVertical ? 'け' : 'く';
+  if (index && !middle && !ring && !pinky && !isHandVertical) return 'そ';
+
+  const othersClosed = !middle && !ring && !pinky;
+  if (othersClosed && !index) {
+    const thumbToIndexTip = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+    if (thumbToIndexTip < 0.08) return 'お';
+    if (thumb) return 'あ';
+    return 'え';
+  }
+
+  return '?';
+}
+
+// ── MediaPipe Hands ────────────────────────────────────────────────────────
+const hands = new Hands({
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 0,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.5,
+});
+
+hands.onResults(onResults);
+
+function onResults(results) {
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    const lm = results.multiHandLandmarks[0];
+    currentLandmarks = lm;
+
+    ctx.save();
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    drawConnectors(ctx, lm, HAND_CONNECTIONS, { color: 'rgba(78,205,196,0.7)', lineWidth: 2 });
+    drawLandmarks(ctx, lm, { color: '#a5f3e8', fillColor: 'rgba(165,243,232,0.3)', lineWidth: 1, radius: 5 });
+    ctx.restore();
+
+    // 動画記録中の場合、フレームを蓄積（10fps相当に間引く）
+    if (recordingChar && recordStartTime) {
+      const elapsed = Date.now() - recordStartTime;
+      const expectedFrames = Math.floor(elapsed / 100); // 100ms = 10fps
+      if (frameBuffer.length <= expectedFrames) {
+        // 座標を3桁精度の配列形式で保存（データ量約60%削減）
+        const compactLm = lm.map(p => [
+          Math.round(p.x * 1000) / 1000,
+          Math.round(p.y * 1000) / 1000,
+          Math.round(p.z * 1000) / 1000
+        ]);
+        frameBuffer.push(compactLm);
+      }
+
+      if (elapsed >= RECORD_DURATION) {
+        // 1秒経過 → 保存
+        if (!trainingData[recordingChar]) trainingData[recordingChar] = [];
+        trainingData[recordingChar].push(frameBuffer);
+
+        saveTrainingData();
+        updateTrainingStats();
+        recordCharInput.value = '';
+        enterPressCount = 0;
+
+        console.log(`✅ Recorded: "${recordingChar}" (${frameBuffer.length} frames)`);
+
+        // フィードバック
+        elChar.textContent = recordingChar;
+        elChar.style.color = '#7effa0';
+        setTimeout(() => {
+          elChar.textContent = lastRecognizedChar;
+          elChar.style.color = '#a5f3e8';
+        }, 800);
+
+        // リセット
+        recordingChar = null;
+        recordStartTime = null;
+        frameBuffer = [];
+      }
+    }
+
+    if (currentMode === 'recognize') {
+      // 認識処理を間引く（500msごと）
+      const now = Date.now();
+      if (now - lastRecognizeTime > 500) {
+        lastRecognizeTime = now;
+        const char = classifyByLearning(lm);
+        lastRecognizedChar = char;
+        elChar.textContent = char;
+        recordHistory(char);
+      }
+    }
+  } else {
+    currentLandmarks = null;
+    if (currentMode === 'recognize') {
+      lastRecognizedChar = '—';
+      elChar.textContent = '—';
+    }
+  }
+}
+
+const camera = new Camera(video, {
+  onFrame: async () => {
+    await hands.send({ image: video });
+  },
+  width: 320,
+  height: 240,
+});
+
+function showCanvasError(line1, line2) {
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ef4444';
+  ctx.font = 'bold 22px Hiragino Sans, sans-serif';
+  ctx.fillText(line1, canvas.width / 2, canvas.height / 2 - 16);
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '15px Hiragino Sans, sans-serif';
+  ctx.fillText(line2, canvas.width / 2, canvas.height / 2 + 18);
+}
+
+hands.initialize().then(async () => {
+  elStatusDot.classList.add('ready');
+  elStatusTxt.textContent = '準備完了 — 手をかざしてください';
+
+  try {
+    const probe = await navigator.mediaDevices.getUserMedia({ video: true });
+    probe.getTracks().forEach(t => t.stop());
+  } catch (err) {
+    elStatusDot.style.background = '#ef4444';
+    elStatusTxt.textContent = 'カメラのアクセスを許可してください';
+    showCanvasError('カメラへのアクセスが拒否されました', 'ブラウザのアドレスバー横でカメラ許可を与えてください');
+    return;
+  }
+
+  camera.start();
+}).catch(err => {
+  elStatusDot.style.background = '#ef4444';
+  elStatusTxt.textContent = 'エラー: ' + err.message;
+  showCanvasError('エラーが発生しました', err.message);
+  console.error(err);
+});
+
+// ── History ────────────────────────────────────────────────────────────────
+let history = [];
+let candidateChar = null;
+let candidateCount = 0;
+const CONFIRM_THRESHOLD = 4; // 認識間隔500ms × 4 = 約2秒で確定
+
+function recordHistory(char) {
+  if (char === '?' || char === '—') {
+    candidateChar = null;
+    candidateCount = 0;
+    return;
+  }
+
+  // 直前の確定文字と同じなら追加しない（連続防止）
+  const lastConfirmed = history.length > 0 ? history[history.length - 1] : null;
+  if (char === lastConfirmed) {
+    candidateChar = null;
+    candidateCount = 0;
+    return;
+  }
+
+  // 安定認識のカウント
+  if (char === candidateChar) {
+    candidateCount++;
+    if (candidateCount >= CONFIRM_THRESHOLD) {
+      history.push(char);
+      elHistory.textContent = history.join('');
+      candidateChar = null;
+      candidateCount = 0;
+      // 確定と同時に読み上げ
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const utt = new SpeechSynthesisUtterance(char);
+        utt.lang = 'ja-JP';
+        utt.rate = 0.9;
+        const voices = window.speechSynthesis.getVoices();
+        const jaVoice = voices.find(v => v.lang.startsWith('ja'));
+        if (jaVoice) utt.voice = jaVoice;
+        window.speechSynthesis.speak(utt);
+      }
+    }
+  } else {
+    candidateChar = char;
+    candidateCount = 1;
+  }
+}
+
+function clearHistory() {
+  history = [];
+  candidateChar = null;
+  candidateCount = 0;
+  elHistory.textContent = '';
+}
+
+function addSpace() {
+  history.push(' ');
+  elHistory.textContent = history.join('');
+}
+
+function backspaceChar() {
+  history.pop();
+  elHistory.textContent = history.join('');
+}
+
+function copyHistory() {
+  const text = history.join('');
+  if (!text) {
+    alert('テキストがありません');
+    return;
+  }
+  navigator.clipboard.writeText(text).then(
+    () => alert(`📋 コピーしました：\n${text}`),
+    () => alert('❌ コピーに失敗しました')
+  );
+}
+
+function speakHistory() {
+  const text = history.join('');
+  if (!text.trim()) { alert('テキストがありません'); return; }
+  if (!window.speechSynthesis) { alert('このブラウザは音声読み上げに対応していません'); return; }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'ja-JP';
+  utterance.rate = 0.9;
+  const voices = window.speechSynthesis.getVoices();
+  const jaVoice = voices.find(v => v.lang.startsWith('ja'));
+  if (jaVoice) utterance.voice = jaVoice;
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeaking() {
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+function saveHistoryAsText() {
+  const text = history.join('');
+  if (!text) {
+    alert('テキストがありません');
+    return;
+  }
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T').join('_').slice(0, 19);
+  const filename = `transcript_${timestamp}.txt`;
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── Export ────────────────────────────────────────────────────────────────
+function exportTrainingData() {
+  const timestamp = new Date().toISOString().split('T')[0];
+  const filename = `training_data_${timestamp}.json`;
+
+  const exportData = {
+    timestamp: new Date().toISOString(),
+    totalSamples: Object.values(trainingData).reduce((sum, arr) => sum + arr.length, 0),
+    charCounts: Object.fromEntries(Object.entries(trainingData).map(([char, samples]) => [char, samples.length])),
+    data: trainingData
+  };
+
+  const json = JSON.stringify(exportData, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  alert(`✅ データをエクスポートしました: ${filename}\n\nGitHub に push してください:\ngit add data/$(date +%Y-%m-%d)/${filename}\ngit commit -m "Add training data for $(date +%Y-%m-%d)"\ngit push`);
+}
+
+function exportSelectedChars() {
+  const input = document.getElementById('export-chars-input').value.trim();
+  if (!input) {
+    alert('エクスポートする文字を入力してください');
+    return;
+  }
+
+  const chars = Array.from(input);
+  const selectedData = {};
+  const missingChars = [];
+
+  for (const char of chars) {
+    if (trainingData[char]) {
+      selectedData[char] = trainingData[char];
+    } else {
+      missingChars.push(char);
+    }
+  }
+
+  if (Object.keys(selectedData).length === 0) {
+    alert(`❌ データが見つかりません：${missingChars.join('、')}`);
+    return;
+  }
+
+  const timestamp = new Date().toISOString().split('T')[0];
+  const charsLabel = Object.keys(selectedData).join('');
+  const filename = `training_${charsLabel}_${timestamp}.json`;
+
+  const exportData = {
+    timestamp: new Date().toISOString(),
+    totalSamples: Object.values(selectedData).reduce((sum, arr) => sum + arr.length, 0),
+    charCounts: Object.fromEntries(Object.entries(selectedData).map(([c, s]) => [c, s.length])),
+    data: selectedData
+  };
+
+  const json = JSON.stringify(exportData, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  let msg = `✅ ${filename}\n保存文字：${Object.keys(selectedData).join('、')}\nサンプル数：${exportData.totalSamples}`;
+  if (missingChars.length > 0) {
+    msg += `\n\n⚠️ データなし：${missingChars.join('、')}`;
+  }
+  alert(msg);
+}
+
+function importTrainingData(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const importedData = JSON.parse(e.target.result);
+
+      if (!importedData.data) {
+        alert('❌ 無効なJSONファイル形式です');
+        return;
+      }
+
+      const merge = confirm(
+        `📊 ${Object.keys(importedData.data).length}個の文字データが見つかりました\n\n` +
+        `現在のデータ：${Object.keys(trainingData).length}個の文字\n` +
+        `インポート内容：${Object.keys(importedData.data).length}個の文字\n\n` +
+        `「OK」：既存データとマージ\n「キャンセル」：すべて置き換え`
+      );
+
+      if (merge) {
+        // マージモード：既存データに追加
+        for (const [char, samples] of Object.entries(importedData.data)) {
+          if (!trainingData[char]) {
+            trainingData[char] = [];
+          }
+          trainingData[char].push(...samples);
+        }
+        alert(`✅ マージ完了\n新しいデータ数：${Object.values(trainingData).reduce((sum, arr) => sum + arr.length, 0)}個`);
+      } else {
+        // 置き換えモード：すべて置き換え
+        trainingData = JSON.parse(JSON.stringify(importedData.data));
+        alert(`✅ 置き換え完了\n読み込んだデータ数：${Object.values(trainingData).reduce((sum, arr) => sum + arr.length, 0)}個`);
+      }
+
+      saveTrainingData();
+      updateTrainingStats();
+    } catch (error) {
+      alert(`❌ ファイル読み込みエラー：${error.message}`);
+      console.error('Import error:', error);
+    }
+  };
+
+  reader.readAsText(file);
+}
+
+// ── Input Event Listener ──────────────────────────────────────────────────
+recordCharInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    enterPressCount++;
+
+    if (enterPressCount === 2) {
+      startRecording();
+      enterPressCount = 0;
+    } else {
+      // 1回目のエンター時は視覚的フィードバック
+      recordCharInput.style.borderColor = '#4ECDC4';
+      setTimeout(() => {
+        recordCharInput.style.borderColor = 'rgba(255,255,255,0.15)';
+      }, 300);
+    }
+  }
+});
+
+document.getElementById('import-file').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    importTrainingData(file);
+    e.target.value = '';
+  }
+});
+
+// ── Initialize ─────────────────────────────────────────────────────────────
+loadTrainingData();
+updateTrainingStats();
+</script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "description": "JSL 指文字 フォールバック認識ルール",
+  "lastUpdated": "2026-05-24",
+  "rules": {
+    "い": {
+      "description": "小指のみ立てる",
+      "condition": "!index && !middle && !ring && pinky"
+    },
+    "う": {
+      "description": "人差し指＋中指",
+      "condition": "index && middle && !ring && !pinky"
+    },
+    "き": {
+      "description": "人差し指＋小指（ロックサイン）",
+      "condition": "index && !middle && !ring && pinky"
+    },
+    "か/し": {
+      "description": "親指＋人差し指のL字 - 向きで分岐",
+      "condition": "thumb && index && !middle && !ring && !pinky",
+      "subRules": {
+        "か": "isHandVertical (縦向き)",
+        "し": "!isHandVertical (横向き)"
+      }
+    },
+    "く/け": {
+      "description": "4本指すべて立つ - 向きで分岐",
+      "condition": "index && middle && ring && pinky",
+      "subRules": {
+        "け": "isHandVertical (縦向き)",
+        "く": "!isHandVertical (横向き)"
+      }
+    },
+    "そ": {
+      "description": "人差し指のみ、横向き",
+      "condition": "index && !middle && !ring && !pinky && !isHandVertical"
+    },
+    "あ": {
+      "description": "親指だけ立てる",
+      "condition": "othersClosed && !index && thumb"
+    },
+    "え": {
+      "description": "5本指を曲げる（グー）",
+      "condition": "othersClosed && !index && !thumb"
+    },
+    "お": {
+      "description": "親指×人差し指でO字（TIP同士が接近）",
+      "condition": "othersClosed && !index && thumbToIndexTipDist < 0.08"
+    }
+  },
+  "notes": "学習データが不足している場合のフォールバック用。距離ベース分類で信頼度が低い場合に使用。"
+}
