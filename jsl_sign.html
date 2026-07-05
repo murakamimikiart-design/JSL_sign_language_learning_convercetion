@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JSL 手話認識 学習版</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d1a; color: #e8e8f0;
+      font-family: 'Hiragino Sans', 'Meiryo', 'Yu Gothic', sans-serif;
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; padding: 24px 16px; gap: 20px;
+    }
+    header { text-align: center; }
+    header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: 0.08em; color: #c4b5fd; }
+    header p  { font-size: 0.82rem; color: #6b7280; margin-top: 4px; }
+
+    .mode-toggle {
+      display: flex; gap: 8px;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px; padding: 4px;
+    }
+    .mode-btn {
+      background: none; border: none; color: #6b7280;
+      padding: 6px 14px; border-radius: 6px; cursor: pointer;
+      font-size: 0.85rem; transition: all 0.2s;
+    }
+    .mode-btn.active { background: #8b5cf6; color: #fff; font-weight: 600; }
+
+    .main-layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+
+    .camera-panel {
+      position: relative; border-radius: 14px; overflow: hidden;
+      box-shadow: 0 0 0 1px rgba(196,181,253,0.15), 0 8px 32px rgba(0,0,0,0.5);
+    }
+    #video { display: none; }
+    #canvas { display: block; width: 480px; height: 360px; }
+
+    #status-badge {
+      position: absolute; top: 12px; left: 12px;
+      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 20px; padding: 4px 12px; font-size: 0.78rem; color: #94a3b8;
+      display: flex; align-items: center; gap: 6px; backdrop-filter: blur(6px);
+    }
+    #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; flex-shrink: 0; }
+    #status-dot.ready { background: #22c55e; animation: blink 2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    #feature-badge {
+      position: absolute; top: 12px; right: 12px;
+      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 20px; padding: 4px 10px; font-size: 0.72rem; color: #94a3b8;
+      backdrop-filter: blur(6px); display: flex; gap: 6px; align-items: center;
+    }
+    .feat-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .feat-dot.on  { background: #22c55e; }
+    .feat-dot.off { background: #475569; }
+
+    /* モーション状態バー（カメラ下部） */
+    #motion-bar-wrap {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 5px; background: rgba(0,0,0,0.5);
+    }
+    #motion-bar {
+      height: 100%; width: 0%; transition: width 0.1s, background 0.2s;
+      background: #475569;
+    }
+    #motion-bar.active   { background: #f59e0b; }
+    #motion-bar.settling { background: #22c55e; }
+
+    /* モーション状態ラベル（カメラ左下） */
+    #motion-state-badge {
+      position: absolute; bottom: 10px; left: 12px;
+      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 20px; padding: 3px 10px; font-size: 0.72rem; color: #6b7280;
+      backdrop-filter: blur(6px); transition: all 0.2s;
+    }
+    #motion-state-badge.active   { color: #f59e0b; border-color: rgba(245,158,11,0.4); }
+    #motion-state-badge.settling { color: #22c55e; border-color: rgba(34,197,94,0.4); }
+
+    .result-panel { width: 260px; display: flex; flex-direction: column; gap: 14px; }
+
+    .card {
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px; padding: 16px;
+    }
+    .card-label { font-size: 0.72rem; letter-spacing: 0.1em; color: #6b7280; text-transform: uppercase; margin-bottom: 8px; }
+
+    #current-word {
+      font-size: 2.2rem; line-height: 1.2; color: #c4b5fd; font-weight: 700;
+      text-align: center; min-height: 70px;
+      display: flex; align-items: center; justify-content: center;
+      text-shadow: 0 0 30px rgba(196,181,253,0.4); word-break: break-all;
+    }
+    #confidence-bar-wrap { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+    #confidence-bar { height: 100%; background: #8b5cf6; border-radius: 2px; transition: width 0.4s; width: 0%; }
+
+    /* 感度調整 */
+    .sensitivity-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 10px; font-size: 0.72rem; color: #6b7280;
+    }
+    input[type=range] { flex: 1; accent-color: #8b5cf6; }
+
+    .record-mode { display: none; }
+    .record-mode.active { display: block; }
+
+    .record-input-group { display: flex; gap: 6px; margin-bottom: 10px; }
+    #record-word-input {
+      flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px; color: #e8e8f0; padding: 8px; font-size: 0.9rem; transition: border-color 0.2s;
+    }
+    #record-word-input::placeholder { color: #6b7280; }
+    #record-word-input:focus { outline: none; border-color: #8b5cf6; }
+
+    .btn {
+      background: #8b5cf6; border: none; color: #fff;
+      padding: 8px 12px; border-radius: 6px; cursor: pointer;
+      font-size: 0.8rem; font-weight: 600; transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-danger { background: #ef4444; }
+    .btn-slate  { background: #475569; }
+    .btn-teal   { background: #0d9488; }
+    .btn-amber  { background: #f59e0b; color: #0d0d1a; }
+
+    .training-stats { font-size: 0.75rem; color: #6b7280; line-height: 1.8; max-height: 140px; overflow-y: auto; }
+    .training-stats strong { color: #c4b5fd; }
+
+    #recording-indicator { display: none; text-align: center; margin: 10px 0; }
+    #recording-indicator.active { display: block; }
+
+    #transcript-text {
+      min-height: 60px; padding: 8px; background: rgba(0,0,0,0.3);
+      border-radius: 6px; font-size: 1.1rem; line-height: 1.8; word-break: break-all;
+    }
+    .btn-row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+    .btn-row .btn { flex: 1; padding: 6px; font-size: 0.78rem; }
+
+    .duration-select {
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px; color: #e8e8f0; padding: 5px 8px; font-size: 0.82rem;
+      width: 100%; margin-bottom: 8px;
+    }
+    .duration-select option { background: #1e1e2e; }
+    .section-divider { border-top: 1px solid rgba(255,255,255,0.08); margin: 12px 0; padding-top: 12px; }
+    .note { font-size: 0.68rem; color: #4b5563; text-align: center; line-height: 1.5; max-width: 760px; }
+
+    /* 文章生成パネル */
+    #generated-sentence {
+      min-height: 56px; padding: 10px; background: rgba(0,0,0,0.3);
+      border-radius: 8px; font-size: 1.05rem; line-height: 1.7; word-break: break-all;
+      border: 1px solid rgba(134,239,172,0.15); color: #86efac;
+    }
+    #generated-sentence.loading { color: #4b5563; font-style: italic; }
+    #generated-sentence.error   { color: #f87171; }
+
+    .gen-btn {
+      width: 100%; margin-top: 8px; padding: 9px;
+      background: linear-gradient(135deg, #059669, #0d9488);
+      border: none; border-radius: 8px; color: #fff;
+      font-size: 0.88rem; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: opacity 0.2s;
+    }
+    .gen-btn:hover { opacity: 0.88; }
+    .gen-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ローディングスピナー */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin 0.7s linear infinite; display: none;
+    }
+    .spinner.active { display: block; }
+
+    /* APIキー設定 */
+    .api-settings {
+      background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px; padding: 10px 14px; margin-top: 8px;
+    }
+    .api-settings summary {
+      font-size: 0.72rem; color: #6b7280; cursor: pointer; user-select: none;
+      list-style: none; display: flex; align-items: center; gap: 6px;
+    }
+    .api-settings summary::before { content: '▶'; font-size: 0.6rem; transition: transform 0.2s; }
+    .api-settings[open] summary::before { transform: rotate(90deg); }
+    #api-key-input {
+      width: 100%; margin-top: 8px; background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
+      color: #e8e8f0; padding: 7px 10px; font-size: 0.78rem;
+      font-family: monospace; transition: border-color 0.2s;
+    }
+    #api-key-input:focus { outline: none; border-color: #059669; }
+    .api-key-note { font-size: 0.65rem; color: #4b5563; margin-top: 5px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>JSL 手話認識 学習版</h1>
+  <p>動作の軌跡全体から手話を認識します</p>
+</header>
+
+<div class="mode-toggle">
+  <button class="mode-btn active" data-mode="recognize">🔍 認識モード</button>
+  <button class="mode-btn" data-mode="record">📝 記録モード</button>
+</div>
+
+<div class="main-layout">
+  <div class="camera-panel">
+    <video id="video" playsinline></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <div id="status-badge">
+      <div id="status-dot"></div>
+      <span id="status-text">モデル読み込み中…</span>
+    </div>
+    <div id="feature-badge">
+      <div class="feat-dot off" id="dot-hands"></div><span>手</span>
+      <div class="feat-dot off" id="dot-pose"></div><span>腕</span>
+      <div class="feat-dot off" id="dot-face"></div><span>顔</span>
+    </div>
+    <div id="motion-state-badge">待機中</div>
+    <div id="motion-bar-wrap"><div id="motion-bar"></div></div>
+  </div>
+
+  <div class="result-panel">
+
+    <div class="card">
+      <div class="card-label">認識中の手話</div>
+      <div id="current-word">—</div>
+      <div id="confidence-bar-wrap"><div id="confidence-bar"></div></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+        <span style="font-size:0.72rem;color:#6b7280;letter-spacing:0.08em;">口形：</span>
+        <span id="mouth-vowel" style="font-size:1.4rem;font-weight:700;color:#f0abfc;min-width:1.5em;text-align:center;">—</span>
+      </div>
+      <div class="sensitivity-row">
+        動作感度:
+        <input type="range" id="motion-sensitivity" min="0.005" max="0.04" step="0.001" value="0.012">
+        <span id="sensitivity-val" style="min-width:36px;text-align:right;">0.012</span>
+      </div>
+      <div style="font-size:0.68rem;color:#4b5563;margin-top:4px;">
+        動作を検出したら追跡 → 止まったら判定します
+      </div>
+    </div>
+
+    <div class="card recognize-mode">
+      <div class="card-label">認識した手話単語</div>
+      <div id="transcript-text"></div>
+      <div class="btn-row">
+        <button class="btn btn-slate" onclick="addWordSpace()">␣ 区切り</button>
+        <button class="btn btn-slate" onclick="backspaceWord()">⌫ 削除</button>
+        <button class="btn btn-slate" onclick="clearTranscript()">クリア</button>
+      </div>
+
+      <button class="gen-btn" id="gen-btn" onclick="generateSentence()">
+        <div class="spinner" id="gen-spinner"></div>
+        ✨ Claude で文章化
+      </button>
+    </div>
+
+    <div class="card recognize-mode">
+      <div class="card-label">生成された文章</div>
+      <div id="generated-sentence" style="color:#4b5563;font-style:italic;">
+        手話単語を認識してから「Claude で文章化」を押してください
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-teal" onclick="copySentence()">📋 コピー</button>
+        <button class="btn btn-amber" onclick="speakSentence()">🔊 読み上げ</button>
+        <button class="btn btn-slate" onclick="stopSpeaking()">⏹ 停止</button>
+        <button class="btn" onclick="saveTranscript()">💾 保存</button>
+      </div>
+
+      <details class="api-settings">
+        <summary>Claude API キー設定</summary>
+        <input type="password" id="api-key-input" placeholder="sk-ant-api03-…" autocomplete="off">
+        <p class="api-key-note">
+          キーはこのブラウザにのみ保存されます（LocalStorage）。<br>
+          外部には送信されません。Anthropic コンソールで取得できます。
+        </p>
+      </details>
+    </div>
+
+    <div class="card record-mode">
+      <div class="card-label">手話を記録する</div>
+      <div style="font-size:0.72rem;color:#6b7280;margin-bottom:8px;line-height:1.6;">
+        単語を入力→「記録」→カウントダウン後に手話を行う。<br>
+        動作を検出して自動的にフレームを蓄積します。
+      </div>
+      <div class="record-input-group">
+        <input id="record-word-input" type="text" placeholder="こんにちは">
+        <button class="btn" id="record-btn" onclick="startRecording()">記録</button>
+      </div>
+      <label style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;display:block;">記録時間</label>
+      <select class="duration-select" id="record-duration">
+        <option value="2000" selected>2秒</option>
+        <option value="3000">3秒</option>
+        <option value="4000">4秒</option>
+      </select>
+      <div id="recording-indicator">
+        <div style="font-size:2rem;">🎥</div>
+        <div style="font-size:0.9rem;color:#c4b5fd;margin-top:4px;">
+          記録中... <span id="frame-count">0</span>フレーム
+        </div>
+        <div id="record-countdown" style="font-size:1.4rem;font-weight:bold;color:#f59e0b;margin-top:4px;"></div>
+      </div>
+      <div class="training-stats" id="training-stats"></div>
+      <div class="section-divider">
+        <div class="card-label">データ管理</div>
+        <button class="btn" onclick="exportTrainingData()" style="width:100%;margin-bottom:4px;">📥 エクスポート</button>
+        <button class="btn" onclick="document.getElementById('import-file').click()" style="width:100%;background:#6366f1;">📤 JSONを読み込む</button>
+        <input type="file" id="import-file" accept=".json" style="display:none;">
+      </div>
+      <div class="section-divider">
+        <div class="card-label">単語を削除</div>
+        <div class="record-input-group">
+          <input id="delete-word-input" type="text" placeholder="削除する単語" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#e8e8f0;padding:8px;font-size:0.9rem;flex:1;">
+          <button class="btn btn-danger" onclick="deleteWordData()">削除</button>
+        </div>
+      </div>
+      <button class="btn btn-danger" onclick="clearAllTrainingData()" style="width:100%;margin-top:4px;">全データリセット</button>
+    </div>
+
+  </div>
+</div>
+
+<p class="note">
+  ※ 動作の開始〜終了を自動検出し、その軌跡全体（DTW）で手話を判定します。<br>
+  止まっている状態では判定しません。各手話を3〜5回記録することを推奨します。
+</p>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// モーション検出 ステートマシン
+//
+//   IDLE → (動き検出) → ACTIVE → (停止検出) → CLASSIFYING → IDLE
+//
+// ════════════════════════════════════════════════════════════════
+const MS = { IDLE: 'idle', ACTIVE: 'active', SETTLING: 'settling' };
+let motionState  = MS.IDLE;
+let motionFrames = 0;   // 連続して動きがあったフレーム数
+let settleFrames = 0;   // 動きが止まってからのフレーム数
+let episodeBuffer = []; // 動作中に蓄積した特徴量フレーム列
+let prevFeatureVec = null;
+
+const MOTION_ON_FRAMES  = 3;   // 何フレーム連続で動いたら開始とするか
+const SETTLE_ON_FRAMES  = 10;  // 何フレーム連続で止まったら終了とするか
+const MIN_EPISODE_FRAMES = 5;  // これより短い動作は無視
+const MAX_EPISODE_FRAMES = 80; // フレーム上限
+
+function getMotionThreshold() {
+  return parseFloat(document.getElementById('motion-sensitivity').value) || 0.012;
+}
+
+// 特徴量ベクトル間の速度（手・腕成分のみ使用）
+function computeVelocity(prev, curr) {
+  if (!prev || !curr || prev.length !== curr.length) return 0;
+  let sum = 0;
+  // 手(0-83) + 腕ポーズ(84-99) の100次元だけ使う
+  const len = Math.min(100, prev.length);
+  for (let i = 0; i < len; i++) sum += (curr[i] - prev[i]) ** 2;
+  return Math.sqrt(sum / len);
+}
+
+function updateMotionState(featureVec) {
+  if (!prevFeatureVec) { prevFeatureVec = featureVec; return; }
+
+  const velocity = computeVelocity(prevFeatureVec, featureVec);
+  prevFeatureVec = featureVec;
+  const threshold = getMotionThreshold();
+
+  // モーションバー更新
+  const barPct = Math.min(100, (velocity / (threshold * 3)) * 100);
+  const bar = document.getElementById('motion-bar');
+  bar.style.width = barPct + '%';
+
+  switch (motionState) {
+    case MS.IDLE:
+      if (velocity > threshold) {
+        motionFrames++;
+        if (motionFrames >= MOTION_ON_FRAMES) {
+          motionState  = MS.ACTIVE;
+          motionFrames = 0;
+          episodeBuffer = [];
+          setMotionBadge('active', '動作検出中…');
+          bar.className = 'active';
+        }
+      } else {
+        motionFrames = 0;
+      }
+      break;
+
+    case MS.ACTIVE:
+      episodeBuffer.push(featureVec);
+      if (episodeBuffer.length > MAX_EPISODE_FRAMES) episodeBuffer.shift();
+
+      if (velocity <= threshold) {
+        settleFrames++;
+        if (settleFrames >= SETTLE_ON_FRAMES) {
+          motionState  = MS.SETTLING;
+          settleFrames = 0;
+          bar.className = 'settling';
+          setMotionBadge('settling', '判定中…');
+          classifyAndCommit();
+        }
+      } else {
+        settleFrames = 0;
+      }
+      break;
+
+    case MS.SETTLING:
+      // 判定中は何もしない（classifyAndCommit が同期的に完了するため）
+      break;
+  }
+}
+
+function classifyAndCommit() {
+  if (episodeBuffer.length < MIN_EPISODE_FRAMES) {
+    resetMotion();
+    return;
+  }
+
+  const { word, confidence } = classifyEpisode(episodeBuffer);
+  if (word !== '—') {
+    elWord.textContent = word;
+    elConfBar.style.width = `${Math.round(confidence * 100)}%`;
+    recordTranscript(word, confidence);
+  } else {
+    elConfBar.style.width = '0%';
+  }
+
+  resetMotion();
+}
+
+function resetMotion() {
+  motionState   = MS.IDLE;
+  motionFrames  = 0;
+  settleFrames  = 0;
+  episodeBuffer = [];
+  setMotionBadge('', '待機中');
+  document.getElementById('motion-bar').className = '';
+}
+
+function setMotionBadge(cls, text) {
+  const el = document.getElementById('motion-state-badge');
+  el.className = cls ? cls : '';
+  el.textContent = text;
+}
+
+// ════════════════════════════════════════════════════════════════
+// DTW（Dynamic Time Warping）による軌跡比較
+// ════════════════════════════════════════════════════════════════
+function frameDist(a, b) {
+  let s = 0;
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const av = Array.isArray(a[i]) ? a[i][0] : a[i];
+    const bv = Array.isArray(b[i]) ? b[i][0] : b[i];
+    s += (av - bv) ** 2;
+  }
+  return Math.sqrt(s);
+}
+
+function dtw(seq1, seq2) {
+  const n = seq1.length, m = seq2.length;
+  // メモリ節約のため2行だけ使うローリング配列
+  let prev = new Float32Array(m + 1).fill(Infinity);
+  let curr = new Float32Array(m + 1).fill(Infinity);
+  prev[0] = 0;
+
+  for (let i = 1; i <= n; i++) {
+    curr.fill(Infinity);
+    curr[0] = Infinity; // i>0 では[i][0]はInfinity
+    for (let j = 1; j <= m; j++) {
+      const cost = frameDist(seq1[i-1], seq2[j-1]);
+      curr[j] = cost + Math.min(prev[j], curr[j-1], prev[j-1]);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  // 長さで正規化
+  return prev[m] / (n + m);
+}
+
+function classifyEpisode(episode) {
+  if (Object.keys(trainingData).length === 0) return { word: '—', confidence: 0 };
+
+  let bestWord = null, bestDist = Infinity;
+
+  for (const word in trainingData) {
+    const samples = trainingData[word];
+    if (!Array.isArray(samples) || samples.length === 0) continue;
+    for (const sample of samples.slice(-5)) {
+      if (!Array.isArray(sample) || sample.length < MIN_EPISODE_FRAMES) continue;
+      const d = dtw(episode, sample);
+      if (d < bestDist) { bestDist = d; bestWord = word; }
+    }
+  }
+
+  const MAX_DIST = 1.8;
+  const confidence = Math.max(0, 1 - bestDist / MAX_DIST);
+  if (bestWord && bestDist < MAX_DIST) return { word: bestWord, confidence };
+  return { word: '—', confidence: 0 };
+}
+
+// ════════════════════════════════════════════════════════════════
+// Holistic 特徴量ベクトル（111次元）
+// ════════════════════════════════════════════════════════════════
+const POSE_INDICES     = [11,12,13,14,15,16,19,20];
+const FACE_KEY_INDICES = [1,4,33,263,13,14];
+function r3(v) { return Math.round(v * 1000) / 1000; }
+
+function normHand(lm) {
+  const ZERO = Array(21).fill(null).map(() => [0,0]);
+  if (!lm || lm.length === 0) return ZERO;
+  const w = lm[0];
+  const ref = Math.hypot(lm[9].x - w.x, lm[9].y - w.y) || 1;
+  return lm.map(p => [r3((p.x-w.x)/ref), r3((p.y-w.y)/ref)]);
+}
+
+function buildFeatureVector({ leftHand, rightHand, poseLm, faceLm }) {
+  const lh = normHand(leftHand).flat();
+  const rh = normHand(rightHand).flat();
+
+  let poseVec = Array(POSE_INDICES.length * 2).fill(0);
+  if (poseLm) {
+    const ls = poseLm[11], rs = poseLm[12];
+    const cx = (ls.x+rs.x)/2, cy = (ls.y+rs.y)/2;
+    const sc = Math.hypot(ls.x-rs.x, ls.y-rs.y) || 1;
+    poseVec = POSE_INDICES.flatMap(i => poseLm[i]
+      ? [r3((poseLm[i].x-cx)/sc), r3((poseLm[i].y-cy)/sc)] : [0,0]);
+  }
+
+  let faceVec = Array(FACE_KEY_INDICES.length * 2).fill(0);
+  let mouthOpen = 0;
+  if (faceLm && faceLm.length > 0) {
+    const nose = faceLm[1];
+    const eyeDist = Math.hypot(
+      (faceLm[33]?.x||0)-(faceLm[263]?.x||0),
+      (faceLm[33]?.y||0)-(faceLm[263]?.y||0)) || 1;
+    faceVec = FACE_KEY_INDICES.flatMap(i => faceLm[i]
+      ? [r3((faceLm[i].x-nose.x)/eyeDist), r3((faceLm[i].y-nose.y)/eyeDist)] : [0,0]);
+    if (faceLm[13] && faceLm[14])
+      mouthOpen = r3(Math.abs(faceLm[14].y-faceLm[13].y)/eyeDist);
+  }
+  return [...lh, ...rh, ...poseVec, ...faceVec, mouthOpen];
+}
+
+// 口形から母音を推定してリアルタイム表示
+function detectMouthVowel(faceLm) {
+  const el = document.getElementById('mouth-vowel');
+  if (!el) return;
+  if (!faceLm || faceLm.length < 310) { el.textContent = '—'; return; }
+
+  const eyeDist = Math.hypot(
+    (faceLm[33]?.x||0)-(faceLm[263]?.x||0),
+    (faceLm[33]?.y||0)-(faceLm[263]?.y||0)) || 1;
+
+  // 口の開き（縦）: 上唇13 / 下唇14
+  const openV = faceLm[13] && faceLm[14]
+    ? Math.abs(faceLm[14].y - faceLm[13].y) / eyeDist : 0;
+  // 口幅（横）: 左端61 / 右端291
+  const openH = faceLm[61] && faceLm[291]
+    ? Math.abs(faceLm[291].x - faceLm[61].x) / eyeDist : 0;
+  // 口の丸み: 横幅 / 縦幅
+  const ratio = openV > 0.01 ? openH / openV : 99;
+
+  let vowel = '—';
+  if (openV < 0.04) {
+    vowel = 'ん';          // ほぼ閉じている
+  } else if (ratio < 1.5) {
+    vowel = openV > 0.12 ? 'あ' : 'お';  // 縦に広い→あ、やや丸→お
+  } else if (ratio < 2.5) {
+    vowel = 'う';          // 横幅と縦幅が近い（すぼめ）
+  } else {
+    vowel = openV > 0.07 ? 'え' : 'い';  // 横に広い→え/い
+  }
+  el.textContent = vowel;
+}
+
+// ════════════════════════════════════════════════════════════════
+// DOM & State
+// ════════════════════════════════════════════════════════════════
+const video   = document.getElementById('video');
+const canvas  = document.getElementById('canvas');
+const ctx     = canvas.getContext('2d');
+const elWord  = document.getElementById('current-word');
+const elStatusDot = document.getElementById('status-dot');
+const elStatusTxt = document.getElementById('status-text');
+const elTranscript = document.getElementById('transcript-text');
+const elConfBar    = document.getElementById('confidence-bar');
+const recordWordInput = document.getElementById('record-word-input');
+const trainingStatsEl = document.getElementById('training-stats');
+canvas.width = 640; canvas.height = 480;
+
+let currentMode = 'recognize';
+let trainingData = {};
+let recordingWord = null, recordStartTime = null, frameBuffer = [];
+let recordingInProgress = false, enterPressCount = 0;
+
+// 感度スライダー表示
+document.getElementById('motion-sensitivity').addEventListener('input', e => {
+  document.getElementById('sensitivity-val').textContent = parseFloat(e.target.value).toFixed(3);
+});
+
+// モード切り替え
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMode = btn.dataset.mode;
+    document.querySelectorAll('.recognize-mode').forEach(el =>
+      el.style.display = currentMode === 'recognize' ? 'block' : 'none');
+    document.querySelectorAll('.record-mode').forEach(el =>
+      el.style.display = currentMode === 'record' ? 'block' : 'none');
+    if (currentMode === 'record') { resetMotion(); updateTrainingStats(); }
+  });
+});
+
+// ── Training Data ─────────────────────────────────────────────
+function loadTrainingData() {
+  const s = localStorage.getItem('jslHolisticData');
+  trainingData = s ? JSON.parse(s) : {};
+}
+function saveTrainingData() {
+  try { localStorage.setItem('jslHolisticData', JSON.stringify(trainingData)); }
+  catch(e) { if(e.name==='QuotaExceededError'&&!window._qw){window._qw=true;alert('⚠️ 容量超過。エクスポートしてください。');} }
+}
+function updateTrainingStats() {
+  const entries = Object.entries(trainingData).sort((a,b) => a[0].localeCompare(b[0],'ja'));
+  trainingStatsEl.innerHTML = entries.length
+    ? entries.map(([w,s]) => `<div><strong>${w}</strong>: ${s.length}サンプル</div>`).join('')
+    : '<div style="color:#6b7280;">記録なし</div>';
+}
+function deleteWordData() {
+  const word = document.getElementById('delete-word-input').value.trim();
+  if (!word) { alert('単語を入力してください'); return; }
+  if (!trainingData[word]) { alert(`「${word}」はありません`); return; }
+  if (confirm(`「${word}」を削除（${trainingData[word].length}サンプル）？`)) {
+    delete trainingData[word]; saveTrainingData(); updateTrainingStats();
+    document.getElementById('delete-word-input').value = '';
+  }
+}
+function clearAllTrainingData() {
+  if (confirm('全データを削除しますか？')) {
+    trainingData = {}; localStorage.removeItem('jslHolisticData'); updateTrainingStats();
+  }
+}
+
+// ── 記録 ─────────────────────────────────────────────────────
+function startRecording() {
+  const word = recordWordInput.value.trim();
+  if (!word) { alert('単語を入力してください'); return; }
+  if (recordingInProgress) return;
+  recordingInProgress = true;
+  const btn  = document.getElementById('record-btn');
+  const ind  = document.getElementById('recording-indicator');
+  const fcEl = document.getElementById('frame-count');
+  const cdEl = document.getElementById('record-countdown');
+  btn.disabled = true; recordWordInput.disabled = true;
+  ind.classList.add('active');
+  let count = 3; cdEl.textContent = count;
+  const ci = setInterval(() => {
+    count--;
+    if (count > 0) { cdEl.textContent = count; }
+    else {
+      clearInterval(ci); cdEl.textContent = '▶ 手話してください';
+      const dur = parseInt(document.getElementById('record-duration').value) || 2000;
+      recordingWord = word; recordStartTime = Date.now(); frameBuffer = [];
+      const timer = setInterval(() => { fcEl.textContent = frameBuffer.length; }, 50);
+      setTimeout(() => {
+        clearInterval(timer);
+        if (frameBuffer.length >= MIN_EPISODE_FRAMES) {
+          if (!trainingData[recordingWord]) trainingData[recordingWord] = [];
+          trainingData[recordingWord].push([...frameBuffer]);
+          saveTrainingData();
+          elWord.textContent = recordingWord; elWord.style.color = '#7effa0';
+          setTimeout(() => { elWord.style.color = '#c4b5fd'; }, 800);
+          console.log(`✅ Recorded: "${recordingWord}" (${frameBuffer.length}f)`);
+        } else {
+          alert(`⚠️ フレームが少なすぎます（${frameBuffer.length}）。もう一度試してください。`);
+        }
+        recordingWord = null; recordStartTime = null; frameBuffer = [];
+        recordingInProgress = false; btn.disabled = false; btn.textContent = '記録';
+        recordWordInput.disabled = false; ind.classList.remove('active'); cdEl.textContent = '';
+        recordWordInput.value = ''; enterPressCount = 0;
+        updateTrainingStats();
+      }, dur);
+    }
+  }, 1000);
+}
+
+// ── MediaPipe Holistic ────────────────────────────────────────
+const holistic = new Holistic({
+  locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${f}`
+});
+holistic.setOptions({
+  modelComplexity: 1, smoothLandmarks: true, enableSegmentation: false,
+  refineFaceLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
+});
+holistic.onResults(onResults);
+
+function onResults(results) {
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  const lh = results.leftHandLandmarks  || null;
+  const rh = results.rightHandLandmarks || null;
+  const pl = results.poseLandmarks      || null;
+  const fl = results.faceLandmarks      || null;
+
+  document.getElementById('dot-hands').className = 'feat-dot ' + (lh||rh ? 'on':'off');
+  document.getElementById('dot-pose').className  = 'feat-dot ' + (pl     ? 'on':'off');
+  document.getElementById('dot-face').className  = 'feat-dot ' + (fl     ? 'on':'off');
+
+  ctx.save();
+  ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+
+  if (pl) {
+    const links = [[11,12],[11,13],[13,15],[12,14],[14,16],[15,19],[16,20]];
+    ctx.strokeStyle = 'rgba(251,191,36,0.5)'; ctx.lineWidth = 2;
+    for (const [a,b] of links) {
+      if (!pl[a]||!pl[b]) continue;
+      ctx.beginPath();
+      ctx.moveTo(pl[a].x*canvas.width, pl[a].y*canvas.height);
+      ctx.lineTo(pl[b].x*canvas.width, pl[b].y*canvas.height);
+      ctx.stroke();
+    }
+  }
+  if (fl) {
+    const lip = [61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37,39,40,185,61];
+    ctx.beginPath(); ctx.strokeStyle='rgba(251,191,36,0.4)'; ctx.lineWidth=1.5;
+    let first=true;
+    for (const i of lip) {
+      if(!fl[i])continue;
+      if(first){ctx.moveTo(fl[i].x*canvas.width,fl[i].y*canvas.height);first=false;}
+      else ctx.lineTo(fl[i].x*canvas.width,fl[i].y*canvas.height);
+    }
+    ctx.closePath(); ctx.stroke();
+  }
+  if (lh) {
+    drawConnectors(ctx,lh,HAND_CONNECTIONS,{color:'rgba(196,181,253,0.8)',lineWidth:2});
+    drawLandmarks(ctx,lh,{color:'#c4b5fd',fillColor:'rgba(196,181,253,0.3)',lineWidth:1,radius:4});
+  }
+  if (rh) {
+    drawConnectors(ctx,rh,HAND_CONNECTIONS,{color:'rgba(134,239,172,0.8)',lineWidth:2});
+    drawLandmarks(ctx,rh,{color:'#86efac',fillColor:'rgba(134,239,172,0.3)',lineWidth:1,radius:4});
+  }
+  ctx.restore();
+
+  const featureVec = buildFeatureVector({leftHand:lh, rightHand:rh, poseLm:pl, faceLm:fl});
+  detectMouthVowel(fl);
+
+  // 記録モード：フレームを蓄積
+  if (recordingWord && recordStartTime) {
+    frameBuffer.push(featureVec);
+  }
+
+  // 認識モード：モーション検出
+  if (currentMode === 'recognize') {
+    updateMotionState(featureVec);
+  }
+}
+
+const camera = new Camera(video, {
+  onFrame: async () => { await holistic.send({ image: video }); },
+  width: 320, height: 240,
+});
+
+function showCanvasError(l1, l2) {
+  ctx.fillStyle='#0d0d1a'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.textAlign='center'; ctx.fillStyle='#ef4444';
+  ctx.font='bold 22px Hiragino Sans, sans-serif';
+  ctx.fillText(l1, canvas.width/2, canvas.height/2-16);
+  ctx.fillStyle='#6b7280'; ctx.font='15px Hiragino Sans, sans-serif';
+  ctx.fillText(l2, canvas.width/2, canvas.height/2+18);
+}
+
+holistic.initialize().then(async () => {
+  elStatusDot.classList.add('ready');
+  elStatusTxt.textContent = '準備完了 — 手話をしてください';
+  try {
+    const p = await navigator.mediaDevices.getUserMedia({ video: true });
+    p.getTracks().forEach(t => t.stop());
+  } catch {
+    elStatusDot.style.background = '#ef4444';
+    elStatusTxt.textContent = 'カメラのアクセスを許可してください';
+    showCanvasError('カメラへのアクセスが拒否されました','ブラウザのアドレスバー横でカメラ許可を与えてください');
+    return;
+  }
+  camera.start();
+}).catch(err => {
+  elStatusDot.style.background = '#ef4444';
+  elStatusTxt.textContent = 'エラー: ' + err.message;
+  showCanvasError('エラーが発生しました', err.message);
+});
+
+// ════════════════════════════════════════════════════════════════
+// Transcript
+// ════════════════════════════════════════════════════════════════
+let transcript = [];
+
+function recordTranscript(word, confidence) {
+  // 直前と同じ単語は追加しない
+  const last = transcript.length > 0 ? transcript[transcript.length-1] : null;
+  if (word === last) return;
+  transcript.push(word);
+  renderTranscript();
+  speakWord(word);
+}
+
+function renderTranscript() { elTranscript.textContent = transcript.join(' '); }
+
+function speakWord(word) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(word);
+  u.lang = 'ja-JP'; u.rate = 0.9;
+  const v = window.speechSynthesis.getVoices().find(v => v.lang.startsWith('ja'));
+  if (v) u.voice = v;
+  window.speechSynthesis.speak(u);
+}
+
+function clearTranscript() { transcript = []; elTranscript.textContent = ''; }
+function addWordSpace()  { transcript.push(' '); renderTranscript(); }
+function backspaceWord() { transcript.pop(); renderTranscript(); }
+
+function copyTranscript() {
+  const t = transcript.join(' ');
+  if (!t.trim()) { alert('テキストがありません'); return; }
+  navigator.clipboard.writeText(t).then(() => alert(`📋 コピー：\n${t}`), () => alert('❌ コピー失敗'));
+}
+function speakTranscript() {
+  const t = transcript.join(' ');
+  if (!t.trim()) { alert('テキストがありません'); return; }
+  if (!window.speechSynthesis) { alert('音声読み上げ非対応'); return; }
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(t);
+  u.lang = 'ja-JP'; u.rate = 0.85;
+  const v = window.speechSynthesis.getVoices().find(v => v.lang.startsWith('ja'));
+  if (v) u.voice = v;
+  window.speechSynthesis.speak(u);
+}
+function stopSpeaking() { if (window.speechSynthesis) window.speechSynthesis.cancel(); }
+
+function saveTranscript() {
+  const t = transcript.join(' ');
+  if (!t.trim()) { alert('テキストがありません'); return; }
+  const ts = new Date().toISOString().replace(/[:.]/g,'-').split('T').join('_').slice(0,19);
+  const blob = new Blob([t], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=`jsl_transcript_${ts}.txt`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── Export / Import ───────────────────────────────────────────
+function exportTrainingData() {
+  const ts = new Date().toISOString().split('T')[0];
+  const d = {
+    version: 4, type: 'jsl-holistic-dtw', featureDim: 111,
+    timestamp: new Date().toISOString(),
+    totalSamples: Object.values(trainingData).reduce((s,a)=>s+a.length, 0),
+    wordCounts: Object.fromEntries(Object.entries(trainingData).map(([w,s])=>[w,s.length])),
+    data: trainingData,
+  };
+  const blob = new Blob([JSON.stringify(d,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=`jsl_dtw_data_${ts}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  alert(`✅ エクスポート: jsl_dtw_data_${ts}.json`);
+}
+
+document.getElementById('import-file').addEventListener('change', (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const imported = JSON.parse(ev.target.result);
+      if (!imported.data) { alert('❌ 無効なJSON'); return; }
+      const merge = confirm(`${Object.keys(imported.data).length}個の手話データ\nOK→マージ　キャンセル→置き換え`);
+      if (merge) {
+        for (const [w,s] of Object.entries(imported.data)) {
+          if (!trainingData[w]) trainingData[w] = [];
+          trainingData[w].push(...s);
+        }
+      } else { trainingData = JSON.parse(JSON.stringify(imported.data)); }
+      saveTrainingData(); updateTrainingStats(); alert('✅ 読み込み完了');
+    } catch (err) { alert(`❌ エラー：${err.message}`); }
+  };
+  reader.readAsText(file); e.target.value = '';
+});
+
+// ── Keyboard ──────────────────────────────────────────────────
+recordWordInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault(); enterPressCount++;
+    if (enterPressCount >= 2) { startRecording(); enterPressCount = 0; }
+    else {
+      recordWordInput.style.borderColor = '#8b5cf6';
+      setTimeout(() => { recordWordInput.style.borderColor = 'rgba(255,255,255,0.15)'; }, 300);
+    }
+  }
+});
+
+// ════════════════════════════════════════════════════════════════
+// Claude API 文章生成
+// ════════════════════════════════════════════════════════════════
+function loadApiKey() {
+  const el = document.getElementById('api-key-input');
+  if (!el) return;
+  el.value = localStorage.getItem('claudeApiKey') || '';
+  // 入力のたびに即保存
+  el.addEventListener('input', e => {
+    localStorage.setItem('claudeApiKey', e.target.value.trim());
+  });
+}
+
+function getApiKey() {
+  // 入力欄の現在値を優先、なければlocalStorageから
+  const el = document.getElementById('api-key-input');
+  const fromInput = el ? el.value.trim() : '';
+  if (fromInput) {
+    localStorage.setItem('claudeApiKey', fromInput);
+    return fromInput;
+  }
+  return localStorage.getItem('claudeApiKey') || '';
+}
+
+async function generateSentence() {
+  const words = transcript.filter(w => w.trim());
+  if (words.length === 0) {
+    alert('手話単語がありません。まず手話を認識させてください。');
+    return;
+  }
+
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    alert('APIキーが設定されていません。\n「生成された文章」カード内の「Claude API キー設定」を開いて入力してください。');
+    document.querySelector('.api-settings').setAttribute('open', '');
+    return;
+  }
+  console.log('APIキー確認:', apiKey.substring(0, 10) + '...');
+
+  const btn     = document.getElementById('gen-btn');
+  const spinner = document.getElementById('gen-spinner');
+  const output  = document.getElementById('generated-sentence');
+
+  btn.disabled = true;
+  spinner.classList.add('active');
+  output.className = 'loading';
+  output.textContent = '文章を生成中…';
+
+  const wordList = words.join('・');
+
+  try {
+    const res = await fetch('http://localhost:8001/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-allow-browser': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 256,
+        system: `あなたは日本手話（JSL）の通訳者です。
+入力された手話単語列を、自然で流暢な日本語文章に変換してください。
+
+ルール：
+- 日本手話は日本語と語順や省略が異なる場合があります
+- 文脈から助詞・助動詞を補い、自然な日本語にしてください
+- 変換後の文章のみを出力してください（説明・注釈は不要）
+- 1〜3文以内にまとめてください`,
+        messages: [{
+          role: 'user',
+          content: `手話単語列：${wordList}`
+        }]
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const sentence = data.content?.[0]?.text?.trim() || '';
+
+    output.className = '';
+    output.textContent = sentence;
+    speakWord(sentence);
+
+  } catch (err) {
+    output.className = 'error';
+    console.error('Claude API error:', err);
+    if (location.protocol === 'file:') {
+      output.textContent = '⚠️ JSL起動.command をダブルクリックして、開いたブラウザで使ってください。';
+      output.style.whiteSpace = 'pre-wrap';
+      output.style.fontSize = '0.82rem';
+    } else if (err.message === 'Failed to fetch') {
+      output.textContent = '⚠️ ネットワークエラー：インターネット接続を確認してください。\nAPIキーが正しく入力されているか「Claude API キー設定」で再確認してください（sk-ant-... で始まるキー）。';
+      output.style.whiteSpace = 'pre-wrap';
+      output.style.fontSize = '0.82rem';
+    } else {
+      output.textContent = `エラー: ${err.message}`;
+      output.style.whiteSpace = 'normal';
+      output.style.fontSize = '1.05rem';
+    }
+  } finally {
+    btn.disabled = false;
+    spinner.classList.remove('active');
+  }
+}
+
+function copySentence() {
+  const text = document.getElementById('generated-sentence').textContent;
+  if (!text || text.startsWith('エラー') || text.startsWith('手話単語')) {
+    alert('コピーできる文章がありません'); return;
+  }
+  navigator.clipboard.writeText(text)
+    .then(() => alert(`📋 コピーしました：\n${text}`))
+    .catch(() => alert('❌ コピー失敗'));
+}
+
+function speakSentence() {
+  const text = document.getElementById('generated-sentence').textContent;
+  if (!text || text.startsWith('手話単語')) { alert('文章がありません'); return; }
+  speakWord(text);
+}
+
+// ── Init ──────────────────────────────────────────────────────
+loadTrainingData();
+updateTrainingStats();
+loadApiKey();
+</script>
+</body>
+</html>

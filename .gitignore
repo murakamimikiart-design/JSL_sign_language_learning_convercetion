@@ -1,30 +1,15 @@
-# OS
+# MediaPipe モデルファイル（大容量）
+*.task
+
+# 動画ファイル
+*.mp4
+
+# 学習データJSON（個人データ）
+training_*.json
+training_from_video.json
+
+# XR関連（別プロジェクト）
+XR-MIRROR-01-main/
+
+# macOS
 .DS_Store
-Thumbs.db
-
-# Node.js
-node_modules/
-package-lock.json
-yarn.lock
-
-# IDE
-.vscode/
-.idea/
-.claude/
-
-# Project archives
-*.zip
-*.swp
-*.swo
-*~
-
-# Logs
-*.log
-npm-debug.log*
-
-# Browser cache
-.cache/
-
-# Local environment
-.env
-.env.local
