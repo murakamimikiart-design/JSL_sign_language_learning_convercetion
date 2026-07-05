@@ -52,6 +52,7 @@
     }
     .mode-btn.active { background: #8b5cf6; color: #fff; font-weight: 600; }
 
+
     .main-layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
 
     .camera-panel {
@@ -248,16 +249,22 @@
   <p>動作の軌跡全体から手話を認識します</p>
 </header>
 
-<div class="mode-toggle">
-  <button class="mode-btn active" data-mode="recognize">🔍 認識モード</button>
-  <button class="mode-btn" data-mode="record">📝 記録モード</button>
+<div style="display:flex;gap:12px;align-items:center;">
+  <div class="mode-toggle">
+    <button class="mode-btn active" data-mode="recognize">🔍 認識モード</button>
+    <button class="mode-btn" data-mode="record">📝 記録モード</button>
+  </div>
+  <button id="camera-toggle-btn" onclick="toggleCamera()" style="
+    background:#1e293b; border:1px solid rgba(255,255,255,0.15); color:#94a3b8;
+    padding:6px 14px; border-radius:6px; cursor:pointer; font-size:0.85rem;
+    transition:all 0.2s;">📷 カメラON</button>
 </div>
 
 <div class="main-layout">
   <div class="camera-panel">
     <video id="video" playsinline></video>
     <canvas id="canvas" width="640" height="480"></canvas>
-    <canvas id="avatar-canvas" width="480" height="360"></canvas>
+    <canvas id="avatar-canvas" width="480" height="360" style="display:none"></canvas>
     <div id="status-badge">
       <div id="status-dot"></div>
       <span id="status-text">モデル読み込み中…</span>
@@ -266,9 +273,7 @@
       <div class="feat-dot off" id="dot-hands"></div><span>手</span>
       <div class="feat-dot off" id="dot-pose"></div><span>腕</span>
       <div class="feat-dot off" id="dot-face"></div><span>顔</span>
-    </div>
-    <div id="avatar-toggle" class="active" onclick="toggleAvatar()">
-      <span id="avatar-toggle-icon">🧑</span><span>アバター</span>
+      <div class="feat-dot off" id="dot-nm" style="transition:background 0.2s;"></div><span>NM</span>
     </div>
     <div id="motion-state-badge">待機中</div>
     <div id="motion-bar-wrap"><div id="motion-bar"></div></div>
@@ -303,19 +308,7 @@
         <button class="btn btn-slate" onclick="clearTranscript()">クリア</button>
       </div>
 
-      <button class="gen-btn" id="gen-btn" onclick="generateSentence()">
-        <div class="spinner" id="gen-spinner"></div>
-        ✨ Claude で文章化
-      </button>
-    </div>
-
-    <div class="card recognize-mode">
-      <div class="card-label">生成された文章</div>
-      <div id="generated-sentence" style="color:#4b5563;font-style:italic;">
-        手話単語を認識してから「Claude で文章化」を押してください
-      </div>
       <div class="btn-row" style="margin-top:8px;">
-        <button class="btn btn-teal" onclick="copySentence()">📋 コピー</button>
         <button class="btn btn-amber" onclick="speakSentence()">🔊 読み上げ</button>
         <button class="btn btn-slate" onclick="stopSpeaking()">⏹ 停止</button>
         <button class="btn" onclick="saveTranscript()">💾 保存</button>
@@ -464,22 +457,66 @@ function updateMotionState(featureVec) {
   }
 }
 
-function classifyAndCommit() {
-  if (episodeBuffer.length < MIN_EPISODE_FRAMES) {
-    resetMotion();
-    return;
-  }
+async function classifyAndCommit() {
+  if (episodeBuffer.length < MIN_EPISODE_FRAMES) { resetMotion(); return; }
 
-  const { word, confidence } = classifyEpisode(episodeBuffer);
-  if (word !== '—') {
-    elWord.textContent = word;
-    elConfBar.style.width = `${Math.round(confidence * 100)}%`;
-    recordTranscript(word, confidence);
-  } else {
-    elConfBar.style.width = '0%';
-  }
+  const { word, confidence, candidates } = classifyEpisode(episodeBuffer);
+  if (candidates.length === 0) { elConfBar.style.width = '0%'; resetMotion(); return; }
 
+  const candidateStr = candidates.map(c => `${c.word}(${Math.round(c.confidence*100)}%)`).join(' / ');
+  elWord.textContent = '考え中…';
+  elConfBar.style.width = '0%';
+  setMotionBadge('settling', `候補: ${candidateStr}`);
+  const decided = await askClaudeForWord(candidates);
+  const finalWord = decided || word;
+  elWord.textContent = finalWord;
+  elConfBar.style.width = `${Math.round(confidence * 100)}%`;
+  recordTranscript(finalWord, confidence);
+  speakWord(finalWord);
   resetMotion();
+}
+
+async function askClaudeForWord(candidates) {
+  const apiKey = getApiKey();
+  if (!apiKey || candidates.length === 0) return candidates[0]?.word || '—';
+
+  // 候補が1つで確信度が高い場合はAPIを呼ばない
+  if (candidates.length === 1 || candidates[0].confidence > 0.85) {
+    return candidates[0].word;
+  }
+
+  const recentWords = transcript.slice(-5).join('、') || '（なし）';
+  const candidateList = candidates.map((c, i) =>
+    `${i+1}. ${c.word}（一致度${Math.round(c.confidence*100)}%）`).join('\n');
+
+  try {
+    const res = await fetch('http://localhost:8001/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-allow-browser': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 32,
+        system: `あなたは日本手話の通訳者です。DTW認識の候補単語と直前の文脈から、最も自然な1語だけを答えてください。単語のみ出力し、説明は不要です。`,
+        messages: [{
+          role: 'user',
+          content: `直前の手話単語：${recentWords}\n\n今回の認識候補：\n${candidateList}\n\n最も適切な1語を答えてください。`
+        }]
+      })
+    });
+    if (!res.ok) return candidates[0].word;
+    const data = await res.json();
+    const answer = data.content?.[0]?.text?.trim() || '';
+    // 候補の中に含まれる単語なら採用、なければ1位を返す
+    const matched = candidates.find(c => answer.includes(c.word));
+    return matched ? matched.word : candidates[0].word;
+  } catch {
+    return candidates[0].word;
+  }
 }
 
 function resetMotion() {
@@ -532,24 +569,31 @@ function dtw(seq1, seq2) {
 }
 
 function classifyEpisode(episode) {
-  if (Object.keys(trainingData).length === 0) return { word: '—', confidence: 0 };
+  if (Object.keys(trainingData).length === 0) return { word: '—', confidence: 0, candidates: [] };
 
-  let bestWord = null, bestDist = Infinity;
+  const MAX_DIST = 1.8;
+  const wordBest = {};  // word → 最小距離
 
   for (const word in trainingData) {
     const samples = trainingData[word];
     if (!Array.isArray(samples) || samples.length === 0) continue;
+    let minD = Infinity;
     for (const sample of samples.slice(-5)) {
       if (!Array.isArray(sample) || sample.length < MIN_EPISODE_FRAMES) continue;
       const d = dtw(episode, sample);
-      if (d < bestDist) { bestDist = d; bestWord = word; }
+      if (d < minD) minD = d;
     }
+    if (minD < MAX_DIST) wordBest[word] = minD;
   }
 
-  const MAX_DIST = 1.8;
-  const confidence = Math.max(0, 1 - bestDist / MAX_DIST);
-  if (bestWord && bestDist < MAX_DIST) return { word: bestWord, confidence };
-  return { word: '—', confidence: 0 };
+  // 距離の近い順に上位3候補
+  const candidates = Object.entries(wordBest)
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, 3)
+    .map(([word, dist]) => ({ word, dist, confidence: Math.max(0, 1 - dist / MAX_DIST) }));
+
+  if (candidates.length === 0) return { word: '—', confidence: 0, candidates: [] };
+  return { word: candidates[0].word, confidence: candidates[0].confidence, candidates };
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -582,6 +626,8 @@ function buildFeatureVector({ leftHand, rightHand, poseLm, faceLm }) {
 
   let faceVec = Array(FACE_KEY_INDICES.length * 2).fill(0);
   let mouthOpen = 0;
+  // NM特徴：鼻先Y速度・X速度・頭ロール角（各フレームに付加）
+  let nmNodVal = 0, nmShakeVal = 0, nmTiltVal = 0;
   if (faceLm && faceLm.length > 0) {
     const nose = faceLm[1];
     const eyeDist = Math.hypot(
@@ -591,11 +637,85 @@ function buildFeatureVector({ leftHand, rightHand, poseLm, faceLm }) {
       ? [r3((faceLm[i].x-nose.x)/eyeDist), r3((faceLm[i].y-nose.y)/eyeDist)] : [0,0]);
     if (faceLm[13] && faceLm[14])
       mouthOpen = r3(Math.abs(faceLm[14].y-faceLm[13].y)/eyeDist);
+    // NM: 直近の鼻先履歴から振幅を計算
+    if (nmNoseY.length >= 2) {
+      nmNodVal   = r3(Math.max(...nmNoseY) - Math.min(...nmNoseY));
+      nmShakeVal = r3(Math.max(...nmNoseX) - Math.min(...nmNoseX));
+    }
+    const lEar = faceLm[234], rEar = faceLm[454];
+    if (lEar && rEar) nmTiltVal = r3(Math.abs(lEar.y - rEar.y));
   }
-  return [...lh, ...rh, ...poseVec, ...faceVec, mouthOpen];
+  return [...lh, ...rh, ...poseVec, ...faceVec, mouthOpen, nmNodVal, nmShakeVal, nmTiltVal];
 }
 
 // 口形から母音を推定してリアルタイム表示
+// ── NM表現（非手指動作）検出 ────────────────────────────────────
+const NM_HISTORY = 20;          // 約0.67秒@30fps
+const NM_NOD_THRESH   = 0.018;  // 頷き：鼻先Y振幅の閾値
+const NM_SHAKE_THRESH = 0.022;  // 否定：鼻先X振幅の閾値
+const NM_TILT_THRESH  = 0.06;   // 疑問：頭ロール角の閾値
+const NM_COOLDOWN_MS  = 1200;   // 同じNMを連続検出しないクールダウン
+
+const nmNoseY   = [];
+const nmNoseX   = [];
+let   nmLastLabel = '';
+let   nmLastTime  = 0;
+
+function detectNMExpression(faceLm) {
+  if (!faceLm || faceLm.length < 10) return;
+  if (currentMode !== 'recognize') return;
+
+  const nose = faceLm[1];
+  if (!nose) return;
+
+  nmNoseY.push(nose.y);
+  nmNoseX.push(nose.x);
+  if (nmNoseY.length > NM_HISTORY) { nmNoseY.shift(); nmNoseX.shift(); }
+  if (nmNoseY.length < NM_HISTORY) return;
+
+  const maxY = Math.max(...nmNoseY), minY = Math.min(...nmNoseY);
+  const maxX = Math.max(...nmNoseX), minX = Math.min(...nmNoseX);
+  const ampY = maxY - minY;
+  const ampX = maxX - minX;
+
+  // 頭のロール角：左耳(234)と右耳(454)のY差
+  const lEar = faceLm[234], rEar = faceLm[454];
+  const tilt = (lEar && rEar) ? Math.abs(lEar.y - rEar.y) : 0;
+
+  const now = Date.now();
+  if (now - nmLastTime < NM_COOLDOWN_MS) return;
+
+  let label = null;
+  // 優先順位：疑問（傾げ）> 頷き > 否定
+  if (tilt > NM_TILT_THRESH && ampY < NM_NOD_THRESH && ampX < NM_SHAKE_THRESH) {
+    label = '疑問';
+  } else if (ampY > NM_NOD_THRESH && ampY > ampX * 1.2) {
+    label = '頷き';
+  } else if (ampX > NM_SHAKE_THRESH && ampX > ampY * 1.2) {
+    label = '否定';
+  }
+
+  if (label) {
+    nmLastLabel = label;
+    nmLastTime  = now;
+    nmNoseY.length = 0;
+    nmNoseX.length = 0;
+    showNMFlash(label);
+    console.log(`[NM] ${label}`);
+  }
+}
+
+function showNMFlash(label) {
+  const colors = { '頷き': '#34d399', '否定': '#f87171', '疑問': '#60a5fa' };
+  const dot = document.getElementById('dot-nm');
+  if (dot) {
+    dot.style.background = colors[label] || '#fff';
+    dot.className = 'feat-dot on';
+    clearTimeout(dot._t);
+    dot._t = setTimeout(() => { dot.className = 'feat-dot off'; }, 900);
+  }
+}
+
 function detectMouthVowel(faceLm) {
   const el = document.getElementById('mouth-vowel');
   if (!el) return '—';
@@ -632,7 +752,7 @@ function detectMouthVowel(faceLm) {
 // 3Dアバター（Three.js） — Webカメラのモーションキャプチャを
 // スケルトン表示し、認識単語の読み上げに合わせて口形を動かす
 // ════════════════════════════════════════════════════════════════
-let avatarEnabled = true;
+let avatarEnabled = false;
 let avatarInitialized = false;
 let avatarScene, avatarCamera, avatarRenderer;
 let poseLine, leftHandLine, rightHandLine, mouthMesh;
@@ -1370,6 +1490,8 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
   });
 });
 
+
+
 // ── Training Data ─────────────────────────────────────────────
 function loadTrainingData() {
   const s = localStorage.getItem('jslHolisticData');
@@ -1412,7 +1534,7 @@ function startRecording() {
   const cdEl = document.getElementById('record-countdown');
   btn.disabled = true; recordWordInput.disabled = true;
   ind.classList.add('active');
-  let count = 3; cdEl.textContent = count;
+  let count = 1; cdEl.textContent = count;
   const ci = setInterval(() => {
     count--;
     if (count > 0) { cdEl.textContent = count; }
@@ -1460,8 +1582,7 @@ function onResults(results) {
   ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
   ctx.restore();
 
-  // 認識モードでは実映像を隠し、手・顔・肩だけのシンプル表示にする
-  canvas.style.visibility = (currentMode === 'recognize') ? 'hidden' : 'visible';
+  canvas.style.visibility = 'visible';
 
   const lh = results.leftHandLandmarks  || null;
   const rh = results.rightHandLandmarks || null;
@@ -1509,6 +1630,7 @@ function onResults(results) {
 
   const featureVec = buildFeatureVector({leftHand:lh, rightHand:rh, poseLm:pl, faceLm:fl});
   const realVowel = detectMouthVowel(fl);
+  detectNMExpression(fl);
   if (!avatarPlaybackActive) {
     updateAvatar({leftHand:lh, rightHand:rh, poseLm:pl, faceLm:fl}, realVowel);
   }
@@ -1538,6 +1660,31 @@ function showCanvasError(l1, l2) {
   ctx.fillText(l2, canvas.width/2, canvas.height/2+18);
 }
 
+let cameraRunning = true;
+function toggleCamera() {
+  const btn = document.getElementById('camera-toggle-btn');
+  if (cameraRunning) {
+    camera.stop();
+    cameraRunning = false;
+    btn.textContent = '📷 カメラOFF';
+    btn.style.color = '#ef4444';
+    btn.style.borderColor = '#ef4444';
+    ctx.fillStyle = '#0d0d1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    resetMotion();
+    elStatusTxt.textContent = 'カメラ停止中';
+    elStatusDot.style.background = '#475569';
+  } else {
+    camera.start();
+    cameraRunning = true;
+    btn.textContent = '📷 カメラON';
+    btn.style.color = '#94a3b8';
+    btn.style.borderColor = 'rgba(255,255,255,0.15)';
+    elStatusTxt.textContent = '準備完了 — 手話をしてください';
+    elStatusDot.classList.add('ready');
+  }
+}
+
 holistic.initialize().then(async () => {
   elStatusDot.classList.add('ready');
   elStatusTxt.textContent = '準備完了 — 手話をしてください';
@@ -1563,12 +1710,10 @@ holistic.initialize().then(async () => {
 let transcript = [];
 
 function recordTranscript(word, confidence) {
-  // 直前と同じ単語は追加しない
   const last = transcript.length > 0 ? transcript[transcript.length-1] : null;
   if (word === last) return;
   transcript.push(word);
   renderTranscript();
-  speakWord(word);
 }
 
 function renderTranscript() { elTranscript.textContent = transcript.join(' '); }
