@@ -3,31 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JSL 手話認識 学習版</title>
+  <title>JSL 手話会話ツール</title>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/examples/jsm/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js"
-    }
-  }
-  </script>
-  <script type="module">
-    import * as THREE from 'three';
-    import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-    import { VRMLoaderPlugin, VRMUtils, VRMHumanBoneName, VRMExpressionPresetName } from 'https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.js';
-    window.THREE = THREE;
-    window.GLTFLoader = GLTFLoader;
-    window.VRMLoaderPlugin = VRMLoaderPlugin;
-    window.VRMUtils = VRMUtils;
-    window.VRMHumanBoneName = VRMHumanBoneName;
-    window.VRMExpressionPresetName = VRMExpressionPresetName;
-    window.threeReady = true;
-    window.dispatchEvent(new Event('three-ready'));
-  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -81,25 +60,6 @@
     .feat-dot.on  { background: #22c55e; }
     .feat-dot.off { background: #475569; }
 
-    #avatar-canvas {
-      position: absolute; top: 0; left: 0; width: 480px; height: 360px;
-      pointer-events: none;
-    }
-    #avatar-canvas.hidden { display: none; }
-
-    #avatar-toggle {
-      position: absolute; top: 44px; right: 12px;
-      background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 20px; padding: 4px 10px; font-size: 0.72rem; color: #94a3b8;
-      backdrop-filter: blur(6px); cursor: pointer; user-select: none;
-      display: flex; gap: 6px; align-items: center; transition: color 0.2s;
-    }
-    #avatar-toggle.active { color: #c4b5fd; border-color: rgba(196,181,253,0.4); }
-    #avatar-toggle.performing {
-      color: #86efac; border-color: rgba(134,239,172,0.5);
-      animation: blink 1s infinite;
-    }
-
     /* モーション状態バー（カメラ下部） */
     #motion-bar-wrap {
       position: absolute; bottom: 0; left: 0; right: 0;
@@ -146,8 +106,8 @@
     }
     input[type=range] { flex: 1; accent-color: #8b5cf6; }
 
-    .record-mode { display: none; }
-    .record-mode.active { display: block; }
+    .record-mode, .conversation-mode { display: none; }
+    .record-mode.active, .conversation-mode.active { display: block; }
 
     .record-input-group { display: flex; gap: 6px; margin-bottom: 10px; }
     #record-word-input {
@@ -191,7 +151,7 @@
     .section-divider { border-top: 1px solid rgba(255,255,255,0.08); margin: 12px 0; padding-top: 12px; }
     .note { font-size: 0.68rem; color: #4b5563; text-align: center; line-height: 1.5; max-width: 760px; }
 
-    /* 文章生成パネル */
+    /* 文章生成パネル（認識モード） */
     #generated-sentence {
       min-height: 56px; padding: 10px; background: rgba(0,0,0,0.3);
       border-radius: 8px; font-size: 1.05rem; line-height: 1.7; word-break: break-all;
@@ -231,33 +191,50 @@
     }
     .api-settings summary::before { content: '▶'; font-size: 0.6rem; transition: transform 0.2s; }
     .api-settings[open] summary::before { transform: rotate(90deg); }
-    #api-key-input {
+    #api-key-input, #conv-api-key-input {
       width: 100%; margin-top: 8px; background: rgba(0,0,0,0.4);
       border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
       color: #e8e8f0; padding: 7px 10px; font-size: 0.78rem;
       font-family: monospace; transition: border-color 0.2s;
     }
-    #api-key-input:focus { outline: none; border-color: #059669; }
+    #api-key-input:focus, #conv-api-key-input:focus { outline: none; border-color: #059669; }
     .api-key-note { font-size: 0.65rem; color: #4b5563; margin-top: 5px; line-height: 1.5; }
+
+    /* 会話モード */
+    #conversation-log {
+      height: 260px; overflow-y: auto; padding: 10px;
+      background: rgba(0,0,0,0.3); border-radius: 8px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .conv-bubble { max-width: 92%; padding: 8px 10px; border-radius: 10px; font-size: 0.88rem; line-height: 1.5; word-break: break-all; }
+    .conv-bubble.user { align-self: flex-end; background: rgba(139,92,246,0.25); border: 1px solid rgba(196,181,253,0.3); color: #e8e8f0; }
+    .conv-bubble.assistant { align-self: flex-start; background: rgba(13,148,136,0.2); border: 1px solid rgba(134,239,172,0.25); color: #d1fae5; }
+    .conv-bubble.error { align-self: center; background: rgba(239,68,68,0.15); border: 1px solid rgba(248,113,113,0.3); color: #fca5a5; }
+    .conv-bubble .conv-role { font-size: 0.65rem; color: #9ca3af; margin-bottom: 3px; letter-spacing: 0.05em; }
+
+    #conv-buffer {
+      min-height: 40px; margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.3);
+      border-radius: 6px; font-size: 1rem; color: #fcd34d; word-break: break-all;
+    }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>JSL 手話認識 学習版</h1>
-  <p>動作の軌跡全体から手話を認識します</p>
+  <h1>JSL 手話会話ツール</h1>
+  <p>手話を認識し、Claude と会話します（Z軸・肩基準・動きも記録）</p>
 </header>
 
 <div class="mode-toggle">
   <button class="mode-btn active" data-mode="recognize">🔍 認識モード</button>
   <button class="mode-btn" data-mode="record">📝 記録モード</button>
+  <button class="mode-btn" data-mode="conversation">💬 手話会話モード</button>
 </div>
 
 <div class="main-layout">
   <div class="camera-panel">
     <video id="video" playsinline></video>
     <canvas id="canvas" width="640" height="480"></canvas>
-    <canvas id="avatar-canvas" width="480" height="360"></canvas>
     <div id="status-badge">
       <div id="status-dot"></div>
       <span id="status-text">モデル読み込み中…</span>
@@ -266,9 +243,6 @@
       <div class="feat-dot off" id="dot-hands"></div><span>手</span>
       <div class="feat-dot off" id="dot-pose"></div><span>腕</span>
       <div class="feat-dot off" id="dot-face"></div><span>顔</span>
-    </div>
-    <div id="avatar-toggle" class="active" onclick="toggleAvatar()">
-      <span id="avatar-toggle-icon">🧑</span><span>アバター</span>
     </div>
     <div id="motion-state-badge">待機中</div>
     <div id="motion-bar-wrap"><div id="motion-bar"></div></div>
@@ -331,11 +305,37 @@
       </details>
     </div>
 
+    <div class="card conversation-mode">
+      <div class="card-label">Claude との会話</div>
+      <div id="conversation-log"></div>
+      <div id="conv-buffer">手話を認識するとここに単語が溜まります</div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn" id="conv-send-btn" onclick="sendConversationTurn()" style="flex:2;">
+          <span id="conv-send-spinner" class="spinner" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span>
+          💬 この発言を送信
+        </button>
+        <button class="btn btn-slate" onclick="clearConversationBuffer()">単語クリア</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-slate" onclick="clearConversation()" style="flex:1;">会話を最初から</button>
+        <button class="btn btn-amber" onclick="stopSpeaking()" style="flex:1;">⏹ 読み上げ停止</button>
+      </div>
+
+      <details class="api-settings">
+        <summary>Claude API キー設定</summary>
+        <input type="password" id="conv-api-key-input" placeholder="sk-ant-api03-…" autocomplete="off">
+        <p class="api-key-note">
+          キーはこのブラウザにのみ保存されます（LocalStorage）。<br>
+          外部には送信されません。Anthropic コンソールで取得できます。
+        </p>
+      </details>
+    </div>
+
     <div class="card record-mode">
       <div class="card-label">手話を記録する</div>
       <div style="font-size:0.72rem;color:#6b7280;margin-bottom:8px;line-height:1.6;">
         単語を入力→「記録」→カウントダウン後に手話を行う。<br>
-        動作を検出して自動的にフレームを蓄積します。
+        動作を検出して自動的にフレームを蓄積します（顔・両手指・肩基準の上下・Z奥行き・動きを記録）。
       </div>
       <div class="record-input-group">
         <input id="record-word-input" type="text" placeholder="こんにちは">
@@ -376,7 +376,8 @@
 
 <p class="note">
   ※ 動作の開始〜終了を自動検出し、その軌跡全体（DTW）で手話を判定します。<br>
-  止まっている状態では判定しません。各手話を3〜5回記録することを推奨します。
+  止まっている状態では判定しません。各手話を3〜5回記録することを推奨します。<br>
+  旧バージョン（jsl_sign.html）で記録した2Dのみのデータも読み込んで使用できます。
 </p>
 
 <script>
@@ -406,8 +407,8 @@ function getMotionThreshold() {
 function computeVelocity(prev, curr) {
   if (!prev || !curr || prev.length !== curr.length) return 0;
   let sum = 0;
-  // 手(0-83) + 腕ポーズ(84-99) の100次元だけ使う
-  const len = Math.min(100, prev.length);
+  // 両手（3D）の成分だけ使う: 21*3*2 = 126
+  const len = Math.min(126, prev.length);
   for (let i = 0; i < len; i++) sum += (curr[i] - prev[i]) ** 2;
   return Math.sqrt(sum / len);
 }
@@ -500,6 +501,30 @@ function setMotionBadge(cls, text) {
 // ════════════════════════════════════════════════════════════════
 // DTW（Dynamic Time Warping）による軌跡比較
 // ════════════════════════════════════════════════════════════════
+
+// 旧バージョン（jsl_sign.html）のデータは2D（X,Yのみ）・113次元固定だった。
+// 新バージョンはZ軸・肩基準の上下・動き量を加えた172次元。
+// 次元数でどちらの形式かを判定し、双方が正しく比較できるようにする。
+const OLD_FRAME_DIM = 113;
+const NEW_FRAME_DIM = 172;
+
+// 新形式（172次元）の1フレームを、旧形式（113次元・X,Yのみ）相当に間引く
+function projectNewFrameToOld(vec) {
+  if (vec.length !== NEW_FRAME_DIM) return vec;
+  const out = [];
+  let off = 0;
+  for (let i = 0; i < 21; i++) { out.push(vec[off + i*3], vec[off + i*3 + 1]); } // 左手 x,y
+  off += 63;
+  for (let i = 0; i < 21; i++) { out.push(vec[off + i*3], vec[off + i*3 + 1]); } // 右手 x,y
+  off += 63;
+  for (let i = 0; i < 8;  i++) { out.push(vec[off + i*3], vec[off + i*3 + 1]); } // 肩肘手首 x,y
+  off += 24;
+  for (let i = 0; i < 6;  i++) { out.push(vec[off + i*3], vec[off + i*3 + 1]); } // 顔 x,y
+  off += 18;
+  out.push(vec[off]); // 口の開き
+  return out; // 42+42+16+12+1 = 113
+}
+
 function frameDist(a, b) {
   let s = 0;
   const len = Math.min(a.length, b.length);
@@ -508,7 +533,7 @@ function frameDist(a, b) {
     const bv = Array.isArray(b[i]) ? b[i][0] : b[i];
     s += (av - bv) ** 2;
   }
-  return Math.sqrt(s);
+  return Math.sqrt(s / len); // 次元数で正規化（新旧フォーマット混在に対応）
 }
 
 function dtw(seq1, seq2) {
@@ -535,13 +560,18 @@ function classifyEpisode(episode) {
   if (Object.keys(trainingData).length === 0) return { word: '—', confidence: 0 };
 
   let bestWord = null, bestDist = Infinity;
+  let projectedEpisode = null; // 旧形式サンプルと比較するときだけ計算（遅延評価）
 
   for (const word in trainingData) {
     const samples = trainingData[word];
     if (!Array.isArray(samples) || samples.length === 0) continue;
     for (const sample of samples.slice(-5)) {
       if (!Array.isArray(sample) || sample.length < MIN_EPISODE_FRAMES) continue;
-      const d = dtw(episode, sample);
+      const sampleDim = (sample[0] && sample[0].length) || 0;
+      const compareEpisode = (sampleDim === OLD_FRAME_DIM)
+        ? (projectedEpisode || (projectedEpisode = episode.map(projectNewFrameToOld)))
+        : episode;
+      const d = dtw(compareEpisode, sample);
       if (d < bestDist) { bestDist = d; bestWord = word; }
     }
   }
@@ -553,46 +583,90 @@ function classifyEpisode(episode) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// Holistic 特徴量ベクトル（111次元）
+// 特徴量ベクトル（172次元）
+//   左手(63) + 右手(63) + 肩肘手首(24) + 顔(18) + 口の開き(1)
+//   + 左手肩基準上下(1) + 右手肩基準上下(1) + 動き量(1)
+//   ※ 各点はすべて[x, y, z]の3次元（旧版はx,yの2次元だった）
 // ════════════════════════════════════════════════════════════════
 const POSE_INDICES     = [11,12,13,14,15,16,19,20];
 const FACE_KEY_INDICES = [1,4,33,263,13,14];
 function r3(v) { return Math.round(v * 1000) / 1000; }
 
-function normHand(lm) {
-  const ZERO = Array(21).fill(null).map(() => [0,0]);
+function normHand3D(lm) {
+  const ZERO = Array(21).fill(null).map(() => [0,0,0]);
   if (!lm || lm.length === 0) return ZERO;
   const w = lm[0];
   const ref = Math.hypot(lm[9].x - w.x, lm[9].y - w.y) || 1;
-  return lm.map(p => [r3((p.x-w.x)/ref), r3((p.y-w.y)/ref)]);
+  return lm.map(p => [
+    r3((p.x - w.x) / ref),
+    r3((p.y - w.y) / ref),
+    r3(((p.z || 0) - (w.z || 0)) / ref),
+  ]);
 }
 
-function buildFeatureVector({ leftHand, rightHand, poseLm, faceLm }) {
-  const lh = normHand(leftHand).flat();
-  const rh = normHand(rightHand).flat();
-
-  let poseVec = Array(POSE_INDICES.length * 2).fill(0);
-  if (poseLm) {
+function buildPoseVec3D(poseLm) {
+  let vec = Array(POSE_INDICES.length * 3).fill(0);
+  if (poseLm && poseLm[11] && poseLm[12]) {
     const ls = poseLm[11], rs = poseLm[12];
-    const cx = (ls.x+rs.x)/2, cy = (ls.y+rs.y)/2;
+    const cx = (ls.x+rs.x)/2, cy = (ls.y+rs.y)/2, cz = ((ls.z||0)+(rs.z||0))/2;
     const sc = Math.hypot(ls.x-rs.x, ls.y-rs.y) || 1;
-    poseVec = POSE_INDICES.flatMap(i => poseLm[i]
-      ? [r3((poseLm[i].x-cx)/sc), r3((poseLm[i].y-cy)/sc)] : [0,0]);
+    vec = POSE_INDICES.flatMap(i => poseLm[i]
+      ? [r3((poseLm[i].x-cx)/sc), r3((poseLm[i].y-cy)/sc), r3(((poseLm[i].z||0)-cz)/sc)]
+      : [0,0,0]);
   }
+  return vec;
+}
 
-  let faceVec = Array(FACE_KEY_INDICES.length * 2).fill(0);
+function buildFaceVec3D(faceLm) {
+  let vec = Array(FACE_KEY_INDICES.length * 3).fill(0);
   let mouthOpen = 0;
   if (faceLm && faceLm.length > 0) {
     const nose = faceLm[1];
     const eyeDist = Math.hypot(
       (faceLm[33]?.x||0)-(faceLm[263]?.x||0),
       (faceLm[33]?.y||0)-(faceLm[263]?.y||0)) || 1;
-    faceVec = FACE_KEY_INDICES.flatMap(i => faceLm[i]
-      ? [r3((faceLm[i].x-nose.x)/eyeDist), r3((faceLm[i].y-nose.y)/eyeDist)] : [0,0]);
+    vec = FACE_KEY_INDICES.flatMap(i => faceLm[i]
+      ? [r3((faceLm[i].x-nose.x)/eyeDist), r3((faceLm[i].y-nose.y)/eyeDist), r3(((faceLm[i].z||0)-(nose.z||0))/eyeDist)]
+      : [0,0,0]);
     if (faceLm[13] && faceLm[14])
       mouthOpen = r3(Math.abs(faceLm[14].y-faceLm[13].y)/eyeDist);
   }
-  return [...lh, ...rh, ...poseVec, ...faceVec, mouthOpen];
+  return { vec, mouthOpen };
+}
+
+// 肩の高さを基準に、手首が肩より上か下かを正規化して表す（正=肩より上）
+function computeShoulderRel(poseLm) {
+  if (!poseLm || !poseLm[11] || !poseLm[12] || !poseLm[15] || !poseLm[16]) return [0, 0];
+  const ls = poseLm[11], rs = poseLm[12], lw = poseLm[15], rw = poseLm[16];
+  const shoulderY = (ls.y + rs.y) / 2;
+  const scale = Math.hypot(ls.x-rs.x, ls.y-rs.y) || 1;
+  return [r3((shoulderY - lw.y) / scale), r3((shoulderY - rw.y) / scale)];
+}
+
+// 直前フレームとの差分から「動いているか」を1つの数値で表す
+let prevBaseVecForVelocity = null;
+function computeFrameVelocity(baseVec) {
+  if (!prevBaseVecForVelocity || prevBaseVecForVelocity.length !== baseVec.length) {
+    prevBaseVecForVelocity = baseVec;
+    return 0;
+  }
+  let sum = 0;
+  for (let i = 0; i < baseVec.length; i++) sum += (baseVec[i] - prevBaseVecForVelocity[i]) ** 2;
+  const v = Math.sqrt(sum / baseVec.length);
+  prevBaseVecForVelocity = baseVec;
+  return r3(v);
+}
+
+function buildFeatureVector({ leftHand, rightHand, poseLm, faceLm }) {
+  const lh = normHand3D(leftHand).flat();   // 63
+  const rh = normHand3D(rightHand).flat();  // 63
+  const poseVec = buildPoseVec3D(poseLm);   // 24
+  const { vec: faceVec, mouthOpen } = buildFaceVec3D(faceLm); // 18 + 1
+  const [shoulderRelL, shoulderRelR] = computeShoulderRel(poseLm); // 1 + 1
+
+  const baseVec = [...lh, ...rh, ...poseVec, ...faceVec, mouthOpen, shoulderRelL, shoulderRelR];
+  const velocity = computeFrameVelocity(baseVec);
+  return [...baseVec, velocity]; // 63+63+24+18+1+1+1+1 = 172
 }
 
 // 口形から母音を推定してリアルタイム表示
@@ -629,709 +703,6 @@ function detectMouthVowel(faceLm) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// 3Dアバター（Three.js） — Webカメラのモーションキャプチャを
-// スケルトン表示し、認識単語の読み上げに合わせて口形を動かす
-// ════════════════════════════════════════════════════════════════
-let avatarEnabled = true;
-let avatarInitialized = false;
-let avatarScene, avatarCamera, avatarRenderer;
-let poseLine, leftHandLine, rightHandLine, mouthMesh;
-let leftHandJoints, rightHandJoints, shoulderJoints, faceJoint;
-let vrmCamera = null;
-let avatarMouthOverride = false;
-let avatarMouthTimer = null;
-
-const AVATAR_W = 4, AVATAR_H = 3; // ワールド座標の幅・高さ（カメラ視野に一致）
-const POSE_LINKS = [[11,12],[11,13],[13,15],[12,14],[14,16],[15,19],[16,20]];
-const MOUTH_BASE_RADIUS = 0.12;
-
-const VOWEL_SHAPE = {
-  'あ': { w: 0.16, h: 0.14 },
-  'い': { w: 0.18, h: 0.05 },
-  'う': { w: 0.08, h: 0.08 },
-  'え': { w: 0.16, h: 0.08 },
-  'お': { w: 0.11, h: 0.12 },
-  'ん': { w: 0.05, h: 0.03 },
-  '—' : { w: 0.05, h: 0.03 },
-};
-
-function lmToVec3(p, mirrored = true) {
-  const x = mirrored ? (0.5 - p.x) * AVATAR_W : (p.x - 0.5) * AVATAR_W;
-  const y = (0.5 - p.y) * AVATAR_H;
-  const z = (p.z || 0) * AVATAR_W; // 奥行き（MediaPipeのzをそのまま利用）
-  return [x, y, z];
-}
-
-function handToLinePoints(hand) {
-  if (!hand || typeof HAND_CONNECTIONS === 'undefined') return [];
-  const pts = [];
-  for (const conn of HAND_CONNECTIONS) {
-    const a = conn[0], b = conn[1];
-    if (!hand[a] || !hand[b]) continue;
-    pts.push(...lmToVec3(hand[a]), ...lmToVec3(hand[b]));
-  }
-  return pts;
-}
-
-function initAvatar() {
-  if (avatarInitialized || !window.THREE) return;
-  const THREE = window.THREE;
-  const canvas = document.getElementById('avatar-canvas');
-
-  avatarRenderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-  avatarRenderer.setSize(480, 360, false);
-  avatarRenderer.setPixelRatio(window.devicePixelRatio || 1);
-
-  avatarScene = new THREE.Scene();
-  avatarCamera = new THREE.OrthographicCamera(-AVATAR_W/2, AVATAR_W/2, AVATAR_H/2, -AVATAR_H/2, 0.1, 10);
-  avatarCamera.position.z = 5;
-
-  // 手・顔・肩だけを表示するステージ用カメラ（Z奥行きが見えるよう遠近投影）
-  vrmCamera = new THREE.PerspectiveCamera(45, 480/360, 0.1, 20);
-  vrmCamera.position.set(0, 0, 4.2);
-  vrmCamera.lookAt(0, 0, 0);
-
-  poseLine = new THREE.LineSegments(
-    new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.85 })
-  );
-  leftHandLine = new THREE.LineSegments(
-    new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({ color: 0xc4b5fd, transparent: true, opacity: 0.9 })
-  );
-  rightHandLine = new THREE.LineSegments(
-    new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({ color: 0x86efac, transparent: true, opacity: 0.9 })
-  );
-  mouthMesh = new THREE.Mesh(
-    new THREE.CircleGeometry(MOUTH_BASE_RADIUS, 24),
-    new THREE.MeshBasicMaterial({ color: 0xf0abfc, transparent: true, opacity: 0.85 })
-  );
-  mouthMesh.position.z = 0.01;
-
-  // 毎フレーム頂点数が変わる（0件のフレームもある）ため、
-  // 境界球キャッシュに基づく視錐台カリングを無効化しておく
-  // （空データの直後にカリング判定が固まり、以後ずっと非表示になるのを防ぐ）
-  poseLine.frustumCulled = false;
-  leftHandLine.frustumCulled = false;
-  rightHandLine.frustumCulled = false;
-
-  avatarScene.add(poseLine, leftHandLine, rightHandLine, mouthMesh);
-
-  // 光源（VRMを再度使う場合に備えて残しておく。手だけ表示でも無害）
-  avatarScene.add(new THREE.HemisphereLight(0xffffff, 0x445, 1.2));
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-  dirLight.position.set(0.5, 1, 1);
-  avatarScene.add(dirLight);
-
-  leftHandJoints  = makeJointSpheres(21, 0xc4b5fd);
-  rightHandJoints = makeJointSpheres(21, 0x86efac);
-  shoulderJoints  = makeJointSpheres(2, 0xfbbf24);
-  faceJoint       = makeJointSpheres(1, 0xf0abfc)[0];
-
-  avatarInitialized = true;
-  // VRMは肘まで含む全身リグ前提で精度が不十分だったため、現在は無効化。
-  // 手首から上・顔・肩・Z奥行きのみのシンプル表示（renderSimpleHandsFrame）を使う。
-  // 再度VRMを使う場合はここで loadVRMAvatar() を呼び直す。
-}
-
-function makeJointSpheres(count, color) {
-  const THREE = window.THREE;
-  const geo = new THREE.SphereGeometry(0.045, 8, 8);
-  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 });
-  const spheres = [];
-  for (let i = 0; i < count; i++) {
-    const m = new THREE.Mesh(geo, mat);
-    m.visible = false;
-    avatarScene.add(m);
-    spheres.push(m);
-  }
-  return spheres;
-}
-
-function setAvatarMouthShape(vowel) {
-  if (mouthMesh) {
-    const s = VOWEL_SHAPE[vowel] || VOWEL_SHAPE['—'];
-    mouthMesh.scale.set(s.w / MOUTH_BASE_RADIUS, s.h / MOUTH_BASE_RADIUS, 1);
-  }
-  applyMouthExpressionVRM(vowel);
-}
-
-function updateAvatar({ leftHand, rightHand, poseLm, faceLm }, realVowel) {
-  if (!avatarEnabled) return;
-  if (!avatarInitialized) initAvatar();
-  if (!avatarInitialized) return;
-
-  if (currentVRM) {
-    currentVRM.scene.visible = true;
-    poseLine.visible = leftHandLine.visible = rightHandLine.visible = mouthMesh.visible = false;
-    renderVRMFrameLive(poseLm, leftHand, rightHand);
-    if (!avatarMouthOverride) setAvatarMouthShape(realVowel);
-    return;
-  }
-
-  renderSimpleHandsFrame(poseLm, leftHand, rightHand, faceLm, realVowel);
-}
-
-// 肘から先は使わず「手首から上（指含む）・顔・肩・Z奥行き」だけを表示する簡易ビュー
-function updateJointSpheres(spheres, points3D) {
-  for (let i = 0; i < spheres.length; i++) {
-    const p = points3D ? points3D[i] : null;
-    if (p) {
-      spheres[i].position.set(p[0], p[1], p[2]);
-      spheres[i].visible = true;
-    } else {
-      spheres[i].visible = false;
-    }
-  }
-}
-
-function renderSimpleHandsFrame(poseLm, leftHand, rightHand, faceLm, realVowel) {
-  const THREE = window.THREE;
-
-  // 注意: MediaPipeの左右ラベルは鏡映済み入力前提のため実際の左右と入れ替わっている
-  const anatLh = rightHand, anatRh = leftHand;
-  const anatLShoulderLm = poseLm ? poseLm[12] : null;
-  const anatRShoulderLm = poseLm ? poseLm[11] : null;
-
-  updateJointSpheres(leftHandJoints,  anatLh ? anatLh.map(p => lmToVec3(p)) : null);
-  updateJointSpheres(rightHandJoints, anatRh ? anatRh.map(p => lmToVec3(p)) : null);
-  leftHandLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(handToLinePoints(anatLh), 3));
-  rightHandLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(handToLinePoints(anatRh), 3));
-
-  updateJointSpheres(shoulderJoints, [
-    anatLShoulderLm ? lmToVec3(anatLShoulderLm) : null,
-    anatRShoulderLm ? lmToVec3(anatRShoulderLm) : null,
-  ]);
-
-  if (faceLm && faceLm[1]) {
-    const [fx, fy, fz] = lmToVec3(faceLm[1]);
-    faceJoint.position.set(fx, fy, fz);
-    faceJoint.visible = true;
-  } else {
-    faceJoint.visible = false;
-  }
-
-  if (faceLm && faceLm[13] && faceLm[14]) {
-    const [x1, y1, z1] = lmToVec3(faceLm[13]);
-    const [x2, y2, z2] = lmToVec3(faceLm[14]);
-    mouthMesh.position.set((x1 + x2) / 2, (y1 + y2) / 2, (z1 + z2) / 2);
-    mouthMesh.visible = true;
-  } else {
-    mouthMesh.visible = false;
-  }
-
-  if (!avatarMouthOverride) setAvatarMouthShape(realVowel);
-
-  avatarRenderer.render(avatarScene, vrmCamera);
-}
-
-function toggleAvatar() {
-  avatarEnabled = !avatarEnabled;
-  const canvasEl = document.getElementById('avatar-canvas');
-  const btn = document.getElementById('avatar-toggle');
-  canvasEl.classList.toggle('hidden', !avatarEnabled);
-  btn.classList.toggle('active', avatarEnabled);
-  if (avatarEnabled && !avatarInitialized) initAvatar();
-}
-
-// ── 単語→母音列（口パク用） ────────────────────────────────────
-const KANA_VOWEL = {
-  'あ':'あ','い':'い','う':'う','え':'え','お':'お',
-  'か':'あ','き':'い','く':'う','け':'え','こ':'お',
-  'が':'あ','ぎ':'い','ぐ':'う','げ':'え','ご':'お',
-  'さ':'あ','し':'い','す':'う','せ':'え','そ':'お',
-  'ざ':'あ','じ':'い','ず':'う','ぜ':'え','ぞ':'お',
-  'た':'あ','ち':'い','つ':'う','て':'え','と':'お',
-  'だ':'あ','ぢ':'い','づ':'う','で':'え','ど':'お',
-  'な':'あ','に':'い','ぬ':'う','ね':'え','の':'お',
-  'は':'あ','ひ':'い','ふ':'う','へ':'え','ほ':'お',
-  'ば':'あ','び':'い','ぶ':'う','べ':'え','ぼ':'お',
-  'ぱ':'あ','ぴ':'い','ぷ':'う','ぺ':'え','ぽ':'お',
-  'ま':'あ','み':'い','む':'う','め':'え','も':'お',
-  'や':'あ','ゆ':'う','よ':'お',
-  'ら':'あ','り':'い','る':'う','れ':'え','ろ':'お',
-  'わ':'あ','を':'お','ん':'ん',
-  'ゃ':'あ','ゅ':'う','ょ':'お',
-  'っ':'ん',
-};
-
-function toHiragana(str) {
-  return str.replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
-}
-
-function wordToVowels(word) {
-  const hira = toHiragana(word);
-  const vowels = [];
-  for (const ch of hira) {
-    if (ch === 'ー') {
-      if (vowels.length) vowels.push(vowels[vowels.length - 1]);
-      continue;
-    }
-    const v = KANA_VOWEL[ch];
-    if (!v) continue; // 記号・空白・漢字などは無視
-    if ((ch === 'ゃ' || ch === 'ゅ' || ch === 'ょ') && vowels.length) {
-      vowels[vowels.length - 1] = v; // 拗音は直前の母音を上書き
-    } else {
-      vowels.push(v);
-    }
-  }
-  return vowels;
-}
-
-const MORA_DURATION_MS = 180;
-
-function animateAvatarMouth(word) {
-  if (!avatarEnabled) return;
-  clearInterval(avatarMouthTimer);
-  const vowels = wordToVowels(word);
-  if (vowels.length === 0) { avatarMouthOverride = false; return; }
-
-  avatarMouthOverride = true;
-  let i = 0;
-  setAvatarMouthShape(vowels[0]);
-  avatarMouthTimer = setInterval(() => {
-    i++;
-    if (i >= vowels.length) {
-      clearInterval(avatarMouthTimer);
-      setAvatarMouthShape('ん');
-      setTimeout(() => { avatarMouthOverride = false; }, 200);
-      return;
-    }
-    setAvatarMouthShape(vowels[i]);
-  }, MORA_DURATION_MS);
-}
-
-// ════════════════════════════════════════════════════════════════
-// アバター再生モード — 記録済みの手話サンプルを再生しながら発話する
-// （trainingDataは手首基準・肩幅基準に正規化された相対座標のため、
-//   ライブ映像には重ねず、固定アンカーに人形として描画する）
-// ════════════════════════════════════════════════════════════════
-let avatarPlaybackActive = false;
-let avatarPlaybackCancelled = false;
-
-const POSE_IDX_MAP = {11:0, 12:1, 13:2, 14:3, 15:4, 16:5, 19:6, 20:7};
-const PB_POSE_ANCHOR = { x: 0, y: 0.4 };
-const PB_POSE_SCALE  = 1.3;
-const PB_HAND_SCALE  = 0.55;
-const PB_FRAME_MS    = 40;
-
-function decodePlaybackFrame(vec) {
-  const lh = [], rh = [], pose = [];
-  let idx = 0;
-  for (let i = 0; i < 21; i++) { lh.push([vec[idx], vec[idx+1]]); idx += 2; }
-  for (let i = 0; i < 21; i++) { rh.push([vec[idx], vec[idx+1]]); idx += 2; }
-  for (let i = 0; i < 8;  i++) { pose.push([vec[idx], vec[idx+1]]); idx += 2; }
-  return { lh, rh, pose };
-}
-
-function poseRelToWorld(p) {
-  return [PB_POSE_ANCHOR.x + p[0]*PB_POSE_SCALE, PB_POSE_ANCHOR.y - p[1]*PB_POSE_SCALE, 0];
-}
-function handRelToWorld(p, wrist) {
-  return [wrist[0] + p[0]*PB_HAND_SCALE, wrist[1] - p[1]*PB_HAND_SCALE, 0];
-}
-
-// ════════════════════════════════════════════════════════════════
-// VRMアバター（実演モード用） — 記録済みモーションでVRMモデルを操演する
-// 腕：モデル自身のT字姿勢から「肩→肘→手首」の実方向を1度だけ計測し、
-//     そこからの差分回転として毎フレーム反映（モデルの向き規約に依存しない）
-// 指：normalized rigでは各指ボーンの静止回転が単位回転なので、
-//     関節の折れ角度をそのまま1軸回転として反映
-// ════════════════════════════════════════════════════════════════
-let currentVRM = null;
-let vrmLoadPromise = null;
-const vrmArmRestData = {}; // boneName -> { dir: Vector3, quat: Quaternion }（世界座標・T字姿勢時点）
-
-// ▼ 実機で腕や指の曲がる向きがおかしい場合はここを調整してください
-const FINGER_BEND_AXIS_NAME = 'x';               // 指の曲げ回転軸 'x'|'y'|'z'
-const FINGER_BEND_SIGN = { left: 1, right: -1 }; // 指（親指以外）の曲げ符号（左右反転用）
-const THUMB_BEND_SIGN  = { left: 1, right: -1 }; // 親指だけ別軸挙動になりやすいため分離
-const FINGER_CURL_SCALE = 1.0;                   // 曲げ角度の強さ
-const ARM_FORWARD_BIAS  = 0;                     // 腕をやや手前に向けたい場合は正の値(0〜0.4程度)に
-
-const VOWEL_TO_EXPR = { 'あ':'aa', 'い':'ih', 'う':'ou', 'え':'ee', 'お':'oh' };
-const MOUTH_EXPR_NAMES = ['aa','ih','ou','ee','oh'];
-
-const FINGER_DEFS = [
-  { idx: [0,1,2,3,4],   bones: ['ThumbMetacarpal','ThumbProximal','ThumbDistal'],       isThumb: true  },
-  { idx: [0,5,6,7,8],   bones: ['IndexProximal','IndexIntermediate','IndexDistal'],     isThumb: false },
-  { idx: [0,9,10,11,12],bones: ['MiddleProximal','MiddleIntermediate','MiddleDistal'],  isThumb: false },
-  { idx: [0,13,14,15,16], bones: ['RingProximal','RingIntermediate','RingDistal'],      isThumb: false },
-  { idx: [0,17,18,19,20], bones: ['LittleProximal','LittleIntermediate','LittleDistal'],isThumb: false },
-];
-
-function loadVRMAvatar() {
-  if (currentVRM) return Promise.resolve(currentVRM);
-  if (vrmLoadPromise) return vrmLoadPromise;
-  if (!avatarInitialized) initAvatar();
-  if (!window.GLTFLoader || !window.VRMLoaderPlugin || !avatarInitialized) return Promise.resolve(null);
-
-  vrmLoadPromise = new Promise(resolve => {
-    const loader = new window.GLTFLoader();
-    loader.register(parser => new window.VRMLoaderPlugin(parser));
-    loader.load(
-      'models/avatar.vrm',
-      (gltf) => {
-        const vrm = gltf.userData.vrm;
-        try {
-          window.VRMUtils.removeUnnecessaryVertices(gltf.scene);
-          window.VRMUtils.combineSkeletons(gltf.scene);
-          if (vrm.meta && vrm.meta.metaVersion === '0') window.VRMUtils.rotateVRM0(vrm);
-        } catch (e) { console.warn('VRMUtils最適化スキップ:', e); }
-        vrm.scene.visible = false;
-        avatarScene.add(vrm.scene);
-        captureVRMRestData(vrm);
-        computeVRMCameraFraming(vrm);
-        currentVRM = vrm;
-        resolve(vrm);
-      },
-      undefined,
-      (err) => { console.error('VRM読み込み失敗:', err); resolve(null); }
-    );
-  });
-  return vrmLoadPromise;
-}
-
-function captureVRMRestData(vrm) {
-  const THREE = window.THREE;
-  const humanoid = vrm.humanoid;
-  const tmpPos1 = new THREE.Vector3(), tmpPos2 = new THREE.Vector3();
-
-  function capture(boneName, childBoneName) {
-    const bone = humanoid.getNormalizedBoneNode(boneName);
-    const child = humanoid.getNormalizedBoneNode(childBoneName);
-    if (!bone || !child) return;
-    bone.getWorldPosition(tmpPos1);
-    child.getWorldPosition(tmpPos2);
-    const dir = tmpPos2.clone().sub(tmpPos1).normalize();
-    const quat = bone.getWorldQuaternion(new THREE.Quaternion());
-    vrmArmRestData[boneName] = { dir, quat };
-  }
-
-  capture('leftUpperArm', 'leftLowerArm');
-  capture('leftLowerArm', 'leftHand');
-  capture('leftHand', 'leftIndexProximal');
-  capture('rightUpperArm', 'rightLowerArm');
-  capture('rightLowerArm', 'rightHand');
-  capture('rightHand', 'rightIndexProximal');
-
-  captureHandRestBasis(vrm, 'left');
-  captureHandRestBasis(vrm, 'right');
-}
-
-// 手首→人差指方向だけでは手のひらの向き（ロール）が定まらないため、
-// 人差指付け根・中指付け根・小指付け根の3点から手のひらの正面を求め、
-// ライブ映像の手（applyHandOrientation）でロールまで含めて再現する
-const vrmHandRestBasis = {};
-
-function computeHandBasisQuat(wrist, middle, index, little) {
-  const THREE = window.THREE;
-  const wristV = new THREE.Vector3(...wrist);
-  const forward = new THREE.Vector3(...middle).sub(wristV).normalize();
-  let right = new THREE.Vector3(...index).sub(new THREE.Vector3(...little)).normalize();
-  let up = new THREE.Vector3().crossVectors(right, forward).normalize();
-  right = new THREE.Vector3().crossVectors(forward, up).normalize();
-  const m = new THREE.Matrix4().makeBasis(right, up, forward);
-  return new THREE.Quaternion().setFromRotationMatrix(m);
-}
-
-function captureHandRestBasis(vrm, side) {
-  const THREE = window.THREE;
-  const humanoid = vrm.humanoid;
-  const hand = humanoid.getNormalizedBoneNode(side + 'Hand');
-  const middle = humanoid.getNormalizedBoneNode(side + 'MiddleProximal');
-  const index = humanoid.getNormalizedBoneNode(side + 'IndexProximal');
-  const little = humanoid.getNormalizedBoneNode(side + 'LittleProximal');
-  if (!hand || !middle || !index || !little) return;
-
-  const handPos = new THREE.Vector3(), midPos = new THREE.Vector3(), idxPos = new THREE.Vector3(), litPos = new THREE.Vector3();
-  hand.getWorldPosition(handPos);
-  middle.getWorldPosition(midPos);
-  index.getWorldPosition(idxPos);
-  little.getWorldPosition(litPos);
-
-  const basisQuat = computeHandBasisQuat(
-    [handPos.x, handPos.y, handPos.z], [midPos.x, midPos.y, midPos.z],
-    [idxPos.x, idxPos.y, idxPos.z], [litPos.x, litPos.y, litPos.z]
-  );
-  const boneQuat = hand.getWorldQuaternion(new THREE.Quaternion());
-  vrmHandRestBasis[side] = { basisQuat, boneQuat };
-}
-
-function applyHandOrientation(side, wrist, middle, index, little) {
-  if (!currentVRM) return;
-  const rest = vrmHandRestBasis[side];
-  const bone = currentVRM.humanoid.getNormalizedBoneNode(side + 'Hand');
-  if (!rest || !bone || !bone.parent) return;
-  const THREE = window.THREE;
-
-  const targetBasisQuat = computeHandBasisQuat(wrist, middle, index, little);
-  const deltaQuat = targetBasisQuat.clone().multiply(rest.basisQuat.clone().invert());
-  const newWorldQuat = deltaQuat.multiply(rest.boneQuat);
-  const parentWorldQuat = bone.parent.getWorldQuaternion(new THREE.Quaternion());
-  bone.quaternion.copy(parentWorldQuat.invert().multiply(newWorldQuat));
-}
-
-// モデルの実寸（頭〜肘あたり）を測って、上半身だけが収まるようにカメラを自動調整する
-// （手動のメートル指定だとモデルごとの身長差でフレーミングがズレるため）
-function computeVRMCameraFraming(vrm) {
-  if (!vrmCamera) return;
-  const THREE = window.THREE;
-  const humanoid = vrm.humanoid;
-  const head = humanoid.getNormalizedBoneNode('head');
-  const chest = humanoid.getNormalizedBoneNode('chest') || humanoid.getNormalizedBoneNode('spine');
-  const elbow = humanoid.getNormalizedBoneNode('rightLowerArm') || humanoid.getNormalizedBoneNode('leftLowerArm');
-  if (!head || !chest) return;
-
-  const headPos = new THREE.Vector3(), chestPos = new THREE.Vector3(), elbowPos = new THREE.Vector3();
-  head.getWorldPosition(headPos);
-  chest.getWorldPosition(chestPos);
-  if (elbow) elbow.getWorldPosition(elbowPos); else elbowPos.copy(chestPos);
-
-  // 頭の上端〜肘あたりの範囲(上半身)を画面に収める
-  const topY = headPos.y + (headPos.y - chestPos.y) * 0.6;
-  const bottomY = Math.min(chestPos.y, elbowPos.y);
-  const centerY = (topY + bottomY) / 2;
-  const spanY = Math.max(0.3, topY - bottomY);
-
-  const fovRad = vrmCamera.fov * Math.PI / 180;
-  const distance = (spanY / 2) / Math.tan(fovRad / 2) * 1.15; // 少し余白を持たせる
-
-  vrmCamera.position.set(0, centerY, distance);
-  vrmCamera.lookAt(0, centerY, 0);
-}
-
-function applyArmBone(boneName, targetWorldDir) {
-  if (!currentVRM) return;
-  const rest = vrmArmRestData[boneName];
-  const bone = currentVRM.humanoid.getNormalizedBoneNode(boneName);
-  if (!rest || !bone || !bone.parent) return;
-  const THREE = window.THREE;
-
-  const deltaQuat = new THREE.Quaternion().setFromUnitVectors(rest.dir, targetWorldDir);
-  const newWorldQuat = deltaQuat.multiply(rest.quat);
-  const parentWorldQuat = bone.parent.getWorldQuaternion(new THREE.Quaternion());
-  bone.quaternion.copy(parentWorldQuat.invert().multiply(newWorldQuat));
-}
-
-// 記録データの相対座標(x,y)から、鏡映を考慮した3D方向ベクトルを作る
-function relDirVec3(a, b, forwardBias = ARM_FORWARD_BIAS) {
-  const THREE = window.THREE;
-  return new THREE.Vector3(-(b[0]-a[0]), -(b[1]-a[1]), forwardBias).normalize();
-}
-
-// p0,p1,p2は[x,y]または[x,y,z]。zが無い(学習データ再生時)場合は0として扱う。
-// 手のひらがカメラ正面を向く姿勢では、指の曲げはほぼ奥行き(Z)方向にしか現れないため、
-// XYだけの2D角度では検出できない。Z込みの3D角度で計算する。
-function curlAngle(p0, p1, p2) {
-  const v1 = [p1[0]-p0[0], p1[1]-p0[1], (p1[2]||0)-(p0[2]||0)];
-  const v2 = [p2[0]-p1[0], p2[1]-p1[1], (p2[2]||0)-(p1[2]||0)];
-  const m1 = Math.hypot(v1[0], v1[1], v1[2]) || 1e-6;
-  const m2 = Math.hypot(v2[0], v2[1], v2[2]) || 1e-6;
-  let cos = (v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2]) / (m1*m2);
-  cos = Math.max(-1, Math.min(1, cos));
-  return Math.acos(cos); // 0=まっすぐ、増えるほど曲がっている
-}
-
-function applyFingers(side, handRel) {
-  if (!currentVRM || !handRel) return;
-  const THREE = window.THREE;
-  const humanoid = currentVRM.humanoid;
-  const axis = new THREE.Vector3(
-    FINGER_BEND_AXIS_NAME === 'x' ? 1 : 0,
-    FINGER_BEND_AXIS_NAME === 'y' ? 1 : 0,
-    FINGER_BEND_AXIS_NAME === 'z' ? 1 : 0,
-  );
-
-  for (const finger of FINGER_DEFS) {
-    const [i0, i1, i2, i3, i4] = finger.idx;
-    const p0 = handRel[i0], p1 = handRel[i1], p2 = handRel[i2], p3 = handRel[i3], p4 = handRel[i4];
-    const angles = [curlAngle(p0,p1,p2), curlAngle(p1,p2,p3), curlAngle(p2,p3,p4)];
-    const sign = (finger.isThumb ? THUMB_BEND_SIGN : FINGER_BEND_SIGN)[side];
-
-    for (let i = 0; i < 3; i++) {
-      const bone = humanoid.getNormalizedBoneNode(side + finger.bones[i]);
-      if (!bone) continue;
-      bone.quaternion.setFromAxisAngle(axis, angles[i] * FINGER_CURL_SCALE * sign);
-    }
-  }
-}
-
-function applyMouthExpressionVRM(vowel) {
-  if (!currentVRM || !currentVRM.expressionManager) return;
-  const em = currentVRM.expressionManager;
-  for (const name of MOUTH_EXPR_NAMES) em.setValue(name, 0);
-  const expr = VOWEL_TO_EXPR[vowel];
-  if (expr) em.setValue(expr, 1);
-  currentVRM.update(0.05);
-  if (currentVRM.scene.visible && avatarRenderer) avatarRenderer.render(avatarScene, vrmCamera);
-}
-
-function renderVRMFrame(vec) {
-  const { lh, rh, pose } = decodePlaybackFrame(vec);
-
-  // 注意: MediaPipeの左右ラベルは「鏡映済み入力」前提の仕様だが、本アプリは
-  // 鏡映していない生映像を渡しているため、実際の解剖学的な左右と入れ替わっている
-  // （MediaPipe公式ドキュメント記載の既知の挙動）。ここで実際の左右に読み替える。
-  const anatLh = rh, anatRh = lh;
-  const anatLShoulder = pose[POSE_IDX_MAP[12]], anatLElbow = pose[POSE_IDX_MAP[14]], anatLWrist = pose[POSE_IDX_MAP[16]], anatLIndex = pose[POSE_IDX_MAP[20]];
-  const anatRShoulder = pose[POSE_IDX_MAP[11]], anatRElbow = pose[POSE_IDX_MAP[13]], anatRWrist = pose[POSE_IDX_MAP[15]], anatRIndex = pose[POSE_IDX_MAP[19]];
-
-  applyArmBone('leftUpperArm',  relDirVec3(anatLShoulder, anatLElbow));
-  applyArmBone('leftLowerArm',  relDirVec3(anatLElbow, anatLWrist));
-  applyArmBone('leftHand',      relDirVec3(anatLWrist, anatLIndex));
-  applyArmBone('rightUpperArm', relDirVec3(anatRShoulder, anatRElbow));
-  applyArmBone('rightLowerArm', relDirVec3(anatRElbow, anatRWrist));
-  applyArmBone('rightHand',     relDirVec3(anatRWrist, anatRIndex));
-
-  applyFingers('left', anatLh);
-  applyFingers('right', anatRh);
-
-  currentVRM.update(PB_FRAME_MS / 1000);
-  avatarRenderer.render(avatarScene, vrmCamera);
-}
-
-// ライブ映像用：MediaPipeの生ランドマーク（{x,y,z}オブジェクト配列）から直接駆動
-// z（奥行き）も保持し、指の曲げ判定を正面向きの手でも検出できるようにする
-function toXYZ(lm) {
-  if (!lm) return null;
-  return lm.map(p => p ? [p.x, p.y, p.z || 0] : [0, 0, 0]);
-}
-
-function renderVRMFrameLive(poseLm, leftHand, rightHand) {
-  if (!currentVRM) return;
-  const get = i => (poseLm && poseLm[i]) ? [poseLm[i].x, poseLm[i].y] : null;
-
-  // 注意: MediaPipeの左右ラベルは「鏡映済み入力」前提の仕様だが、本アプリは
-  // 鏡映していない生映像を渡しているため、実際の解剖学的な左右と入れ替わっている
-  // （MediaPipe公式ドキュメント記載の既知の挙動）。ここで実際の左右に読み替える。
-  const anatLh = rightHand, anatRh = leftHand;
-  const anatLShoulder = get(12), anatLElbow = get(14), anatLWrist = get(16);
-  const anatRShoulder = get(11), anatRElbow = get(13), anatRWrist = get(15);
-
-  if (anatLShoulder && anatLElbow) applyArmBone('leftUpperArm',  relDirVec3(anatLShoulder, anatLElbow));
-  if (anatLElbow && anatLWrist)    applyArmBone('leftLowerArm',  relDirVec3(anatLElbow, anatLWrist));
-  if (anatRShoulder && anatRElbow) applyArmBone('rightUpperArm', relDirVec3(anatRShoulder, anatRElbow));
-  if (anatRElbow && anatRWrist)    applyArmBone('rightLowerArm', relDirVec3(anatRElbow, anatRWrist));
-
-  // 手首の向きだけでなく人差指・小指付け根も使い、手のひらのロールまで再現する
-  const lhXYZ = toXYZ(anatLh);
-  const rhXYZ = toXYZ(anatRh);
-  if (lhXYZ) applyHandOrientation('left',  lhXYZ[0], lhXYZ[9], lhXYZ[5], lhXYZ[17]);
-  if (rhXYZ) applyHandOrientation('right', rhXYZ[0], rhXYZ[9], rhXYZ[5], rhXYZ[17]);
-
-  applyFingers('left', lhXYZ);
-  applyFingers('right', rhXYZ);
-
-  currentVRM.update(1 / 30);
-  avatarRenderer.render(avatarScene, vrmCamera);
-}
-
-function renderPlaybackFrame(vec) {
-  if (!avatarInitialized) initAvatar();
-  if (!avatarInitialized) return;
-  if (currentVRM) { renderVRMFrame(vec); return; }
-
-  const THREE = window.THREE;
-  const { lh, rh, pose } = decodePlaybackFrame(vec);
-
-  const posePts = [];
-  for (const [a, b] of POSE_LINKS) {
-    posePts.push(...poseRelToWorld(pose[POSE_IDX_MAP[a]]), ...poseRelToWorld(pose[POSE_IDX_MAP[b]]));
-  }
-  poseLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(posePts, 3));
-
-  const leftWrist  = poseRelToWorld(pose[POSE_IDX_MAP[15]]);
-  const rightWrist = poseRelToWorld(pose[POSE_IDX_MAP[16]]);
-
-  const lhPts = [], rhPts = [];
-  if (typeof HAND_CONNECTIONS !== 'undefined') {
-    for (const [a, b] of HAND_CONNECTIONS) {
-      lhPts.push(...handRelToWorld(lh[a], leftWrist), ...handRelToWorld(lh[b], leftWrist));
-      rhPts.push(...handRelToWorld(rh[a], rightWrist), ...handRelToWorld(rh[b], rightWrist));
-    }
-  }
-  leftHandLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(lhPts, 3));
-  rightHandLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(rhPts, 3));
-
-  mouthMesh.position.x = PB_POSE_ANCHOR.x; // 口は胴体中央付近に固定
-  mouthMesh.position.y = PB_POSE_ANCHOR.y + 0.9;
-  mouthMesh.visible = true;
-
-  avatarRenderer.render(avatarScene, vrmCamera);
-}
-
-function playAvatarMotion(word) {
-  return new Promise(resolve => {
-    const samples = trainingData[word];
-    if (!samples || samples.length === 0) { resolve(); return; }
-    const episode = samples[samples.length - 1];
-    let i = 0;
-    const timer = setInterval(() => {
-      if (avatarPlaybackCancelled || i >= episode.length) {
-        clearInterval(timer); resolve(); return;
-      }
-      renderPlaybackFrame(episode[i]);
-      i++;
-    }, PB_FRAME_MS);
-  });
-}
-
-function speakWordAwait(word) {
-  return new Promise(resolve => {
-    if (!window.speechSynthesis) { resolve(); return; }
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(word);
-    u.lang = 'ja-JP'; u.rate = 0.9;
-    const v = window.speechSynthesis.getVoices().find(v => v.lang.startsWith('ja'));
-    if (v) u.voice = v;
-    u.onend = resolve;
-    u.onerror = resolve;
-    animateAvatarMouth(word);
-    window.speechSynthesis.speak(u);
-  });
-}
-
-async function playAvatarSentence(words) {
-  if (avatarPlaybackActive || words.length === 0) return;
-  avatarPlaybackActive = true;
-  avatarPlaybackCancelled = false;
-  if (!avatarEnabled) toggleAvatar();
-  setAvatarPerforming(true);
-
-  try {
-    const vrm = await loadVRMAvatar();
-    if (vrm) {
-      vrm.scene.visible = true;
-      poseLine.visible = leftHandLine.visible = rightHandLine.visible = mouthMesh.visible = false;
-    }
-    for (const word of words) {
-      if (avatarPlaybackCancelled) break;
-      await Promise.all([ speakWordAwait(word), playAvatarMotion(word) ]);
-    }
-  } catch (e) {
-    console.error('アバター実演中にエラー:', e);
-  } finally {
-    // ライブ映像側のupdateAvatar()が次フレームで表示状態を再度合わせてくれるが、
-    // 念のためここでも即座に元へ戻しておく
-    setAvatarPerforming(false);
-    avatarPlaybackActive = false;
-  }
-}
-
-function setAvatarPerforming(active) {
-  const btn = document.getElementById('avatar-toggle');
-  const icon = document.getElementById('avatar-toggle-icon');
-  if (!btn || !icon) return;
-  btn.classList.toggle('performing', active);
-  icon.textContent = active ? '🧑‍🦰' : '🧑';
-}
-
-if (window.threeReady) initAvatar();
-else window.addEventListener('three-ready', initAvatar);
-
-// ════════════════════════════════════════════════════════════════
 // DOM & State
 // ════════════════════════════════════════════════════════════════
 const video   = document.getElementById('video');
@@ -1366,6 +737,8 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
       el.style.display = currentMode === 'recognize' ? 'block' : 'none');
     document.querySelectorAll('.record-mode').forEach(el =>
       el.style.display = currentMode === 'record' ? 'block' : 'none');
+    document.querySelectorAll('.conversation-mode').forEach(el =>
+      el.style.display = currentMode === 'conversation' ? 'block' : 'none');
     if (currentMode === 'record') { resetMotion(); updateTrainingStats(); }
   });
 });
@@ -1460,9 +833,6 @@ function onResults(results) {
   ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
   ctx.restore();
 
-  // 認識モードでは実映像を隠し、手・顔・肩だけのシンプル表示にする
-  canvas.style.visibility = (currentMode === 'recognize') ? 'hidden' : 'visible';
-
   const lh = results.leftHandLandmarks  || null;
   const rh = results.rightHandLandmarks || null;
   const pl = results.poseLandmarks      || null;
@@ -1508,18 +878,15 @@ function onResults(results) {
   ctx.restore();
 
   const featureVec = buildFeatureVector({leftHand:lh, rightHand:rh, poseLm:pl, faceLm:fl});
-  const realVowel = detectMouthVowel(fl);
-  if (!avatarPlaybackActive) {
-    updateAvatar({leftHand:lh, rightHand:rh, poseLm:pl, faceLm:fl}, realVowel);
-  }
+  detectMouthVowel(fl);
 
   // 記録モード：フレームを蓄積
   if (recordingWord && recordStartTime) {
     frameBuffer.push(featureVec);
   }
 
-  // 認識モード：モーション検出
-  if (currentMode === 'recognize') {
+  // 認識モード・会話モード：モーション検出
+  if (currentMode === 'recognize' || currentMode === 'conversation') {
     updateMotionState(featureVec);
   }
 }
@@ -1558,11 +925,19 @@ holistic.initialize().then(async () => {
 });
 
 // ════════════════════════════════════════════════════════════════
-// Transcript
+// Transcript（認識モード・会話モードで振り分け）
 // ════════════════════════════════════════════════════════════════
 let transcript = [];
+let conversationBuffer = [];
 
 function recordTranscript(word, confidence) {
+  if (currentMode === 'conversation') {
+    const last = conversationBuffer.length ? conversationBuffer[conversationBuffer.length-1] : null;
+    if (word === last) return;
+    conversationBuffer.push(word);
+    renderConversationBuffer();
+    return;
+  }
   // 直前と同じ単語は追加しない
   const last = transcript.length > 0 ? transcript[transcript.length-1] : null;
   if (word === last) return;
@@ -1580,7 +955,6 @@ function speakWord(word) {
   u.lang = 'ja-JP'; u.rate = 0.9;
   const v = window.speechSynthesis.getVoices().find(v => v.lang.startsWith('ja'));
   if (v) u.voice = v;
-  animateAvatarMouth(word);
   window.speechSynthesis.speak(u);
 }
 
@@ -1588,30 +962,7 @@ function clearTranscript() { transcript = []; elTranscript.textContent = ''; }
 function addWordSpace()  { transcript.push(' '); renderTranscript(); }
 function backspaceWord() { transcript.pop(); renderTranscript(); }
 
-function copyTranscript() {
-  const t = transcript.join(' ');
-  if (!t.trim()) { alert('テキストがありません'); return; }
-  navigator.clipboard.writeText(t).then(() => alert(`📋 コピー：\n${t}`), () => alert('❌ コピー失敗'));
-}
-function speakTranscript() {
-  const t = transcript.join(' ');
-  if (!t.trim()) { alert('テキストがありません'); return; }
-  if (!window.speechSynthesis) { alert('音声読み上げ非対応'); return; }
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(t);
-  u.lang = 'ja-JP'; u.rate = 0.85;
-  const v = window.speechSynthesis.getVoices().find(v => v.lang.startsWith('ja'));
-  if (v) u.voice = v;
-  window.speechSynthesis.speak(u);
-}
-function stopSpeaking() {
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
-  avatarPlaybackCancelled = true;
-  setAvatarPerforming(false);
-  clearInterval(avatarMouthTimer);
-  avatarMouthOverride = false;
-  setAvatarMouthShape('ん');
-}
+function stopSpeaking() { if (window.speechSynthesis) window.speechSynthesis.cancel(); }
 
 function saveTranscript() {
   const t = transcript.join(' ');
@@ -1628,7 +979,8 @@ function saveTranscript() {
 function exportTrainingData() {
   const ts = new Date().toISOString().split('T')[0];
   const d = {
-    version: 4, type: 'jsl-holistic-dtw', featureDim: 111,
+    version: 5, type: 'jsl-holistic-dtw-3d', featureDim: 172,
+    note: '旧形式(featureDim:111/113, 2DのX,Yのみ)のサンプルも同一ファイル内に混在可能',
     timestamp: new Date().toISOString(),
     totalSamples: Object.values(trainingData).reduce((s,a)=>s+a.length, 0),
     wordCounts: Object.fromEntries(Object.entries(trainingData).map(([w,s])=>[w,s.length])),
@@ -1675,21 +1027,27 @@ recordWordInput.addEventListener('keypress', (e) => {
 });
 
 // ════════════════════════════════════════════════════════════════
-// Claude API 文章生成
+// Claude API 共通ヘルパー（APIキーは認識モード・会話モードで共有）
 // ════════════════════════════════════════════════════════════════
 function loadApiKey() {
-  const el = document.getElementById('api-key-input');
-  if (!el) return;
-  el.value = localStorage.getItem('claudeApiKey') || '';
-  // 入力のたびに即保存
-  el.addEventListener('input', e => {
-    localStorage.setItem('claudeApiKey', e.target.value.trim());
-  });
+  const saved = localStorage.getItem('claudeApiKey') || '';
+  for (const id of ['api-key-input', 'conv-api-key-input']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.value = saved;
+    el.addEventListener('input', e => {
+      localStorage.setItem('claudeApiKey', e.target.value.trim());
+      for (const otherId of ['api-key-input', 'conv-api-key-input']) {
+        if (otherId === id) continue;
+        const other = document.getElementById(otherId);
+        if (other) other.value = e.target.value.trim();
+      }
+    });
+  }
 }
 
 function getApiKey() {
-  // 入力欄の現在値を優先、なければlocalStorageから
-  const el = document.getElementById('api-key-input');
+  const el = document.getElementById('api-key-input') || document.getElementById('conv-api-key-input');
   const fromInput = el ? el.value.trim() : '';
   if (fromInput) {
     localStorage.setItem('claudeApiKey', fromInput);
@@ -1698,20 +1056,46 @@ function getApiKey() {
   return localStorage.getItem('claudeApiKey') || '';
 }
 
+async function callClaude(system, messages) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error('NO_API_KEY');
+  const res = await fetch('http://localhost:8001/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-allow-browser': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 256,
+      system,
+      messages,
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return data.content?.[0]?.text?.trim() || '';
+}
+
+// ════════════════════════════════════════════════════════════════
+// 認識モード：Claude で文章化（単発変換）
+// ════════════════════════════════════════════════════════════════
 async function generateSentence() {
   const words = transcript.filter(w => w.trim());
   if (words.length === 0) {
     alert('手話単語がありません。まず手話を認識させてください。');
     return;
   }
-
-  const apiKey = getApiKey();
-  if (!apiKey) {
+  if (!getApiKey()) {
     alert('APIキーが設定されていません。\n「生成された文章」カード内の「Claude API キー設定」を開いて入力してください。');
-    document.querySelector('.api-settings').setAttribute('open', '');
+    document.querySelectorAll('.api-settings')[0]?.setAttribute('open', '');
     return;
   }
-  console.log('APIキー確認:', apiKey.substring(0, 10) + '...');
 
   const btn     = document.getElementById('gen-btn');
   const spinner = document.getElementById('gen-spinner');
@@ -1725,18 +1109,8 @@ async function generateSentence() {
   const wordList = words.join('・');
 
   try {
-    const res = await fetch('http://localhost:8001/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-allow-browser': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 256,
-        system: `あなたは日本手話（JSL）の通訳者です。
+    const sentence = await callClaude(
+      `あなたは日本手話（JSL）の通訳者です。
 入力された手話単語列を、自然で流暢な日本語文章に変換してください。
 
 ルール：
@@ -1744,29 +1118,17 @@ async function generateSentence() {
 - 文脈から助詞・助動詞を補い、自然な日本語にしてください
 - 変換後の文章のみを出力してください（説明・注釈は不要）
 - 1〜3文以内にまとめてください`,
-        messages: [{
-          role: 'user',
-          content: `手話単語列：${wordList}`
-        }]
-      })
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    const sentence = data.content?.[0]?.text?.trim() || '';
-
+      [{ role: 'user', content: `手話単語列：${wordList}` }]
+    );
     output.className = '';
     output.textContent = sentence;
-    playAvatarSentence(words); // 元の認識単語列でアバターが動作＋発話（Claude文は表示のみ）
-
+    speakWord(sentence);
   } catch (err) {
     output.className = 'error';
     console.error('Claude API error:', err);
-    if (location.protocol === 'file:') {
+    if (err.message === 'NO_API_KEY') {
+      output.textContent = 'APIキーが設定されていません。「Claude API キー設定」で入力してください。';
+    } else if (location.protocol === 'file:') {
       output.textContent = '⚠️ JSL起動.command をダブルクリックして、開いたブラウザで使ってください。';
       output.style.whiteSpace = 'pre-wrap';
       output.style.fontSize = '0.82rem';
@@ -1798,11 +1160,83 @@ function copySentence() {
 function speakSentence() {
   const text = document.getElementById('generated-sentence').textContent;
   if (!text || text.startsWith('手話単語')) { alert('文章がありません'); return; }
-  const words = transcript.filter(w => w.trim());
-  if (words.length > 0) {
-    playAvatarSentence(words); // 元の認識単語列でアバターが動作＋発話
-  } else {
-    speakWord(text); // 単語列がない場合はテキストのみ読み上げ
+  speakWord(text);
+}
+
+// ════════════════════════════════════════════════════════════════
+// 手話会話モード：Claude と連続対話（会話履歴を保持）
+// ════════════════════════════════════════════════════════════════
+let conversationMessages = []; // Claude APIに送るmessages履歴
+
+function renderConversationBuffer() {
+  const el = document.getElementById('conv-buffer');
+  el.textContent = conversationBuffer.length
+    ? conversationBuffer.join(' ')
+    : '手話を認識するとここに単語が溜まります';
+}
+
+function clearConversationBuffer() {
+  conversationBuffer = [];
+  renderConversationBuffer();
+}
+
+function appendConversationLog(role, text) {
+  const log = document.getElementById('conversation-log');
+  const bubble = document.createElement('div');
+  bubble.className = `conv-bubble ${role}`;
+  const roleLabel = role === 'user' ? 'あなた（手話）' : role === 'assistant' ? 'Claude' : 'エラー';
+  bubble.innerHTML = `<div class="conv-role">${roleLabel}</div>${text.replace(/</g,'&lt;')}`;
+  log.appendChild(bubble);
+  log.scrollTop = log.scrollHeight;
+}
+
+function clearConversation() {
+  if (!confirm('会話履歴を最初からやり直しますか？')) return;
+  conversationMessages = [];
+  conversationBuffer = [];
+  document.getElementById('conversation-log').innerHTML = '';
+  renderConversationBuffer();
+}
+
+async function sendConversationTurn() {
+  if (conversationBuffer.length === 0) { alert('手話単語がありません。まず手話をしてください。'); return; }
+  if (!getApiKey()) {
+    alert('APIキーが設定されていません。「Claude API キー設定」を開いて入力してください。');
+    document.querySelectorAll('.api-settings')[1]?.setAttribute('open', '');
+    return;
+  }
+
+  const wordList = conversationBuffer.join('・');
+  appendConversationLog('user', wordList);
+  conversationBuffer = [];
+  renderConversationBuffer();
+
+  const btn = document.getElementById('conv-send-btn');
+  const spinner = document.getElementById('conv-send-spinner');
+  btn.disabled = true;
+  spinner.classList.add('active');
+
+  conversationMessages.push({ role: 'user', content: `手話単語列：${wordList}` });
+
+  try {
+    const reply = await callClaude(
+      `あなたは日本手話（JSL）で会話している相手です。
+ユーザーの発言は手話単語列として渡されます。日本手話は語順や助詞が
+日本語と異なる場合があるので、文脈から自然な発言として解釈してください。
+自然な会話の返答を1〜3文程度で返してください（説明・注釈は不要、返答のみ）。`,
+      conversationMessages
+    );
+    conversationMessages.push({ role: 'assistant', content: reply });
+    appendConversationLog('assistant', reply);
+    speakWord(reply);
+  } catch (err) {
+    conversationMessages.pop(); // 失敗した発言は履歴に残さない
+    console.error('Claude API error:', err);
+    const msg = err.message === 'NO_API_KEY' ? 'APIキーが設定されていません' : err.message;
+    appendConversationLog('error', `エラー: ${msg}`);
+  } finally {
+    btn.disabled = false;
+    spinner.classList.remove('active');
   }
 }
 

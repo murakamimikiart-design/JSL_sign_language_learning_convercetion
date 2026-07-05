@@ -1,0 +1,25 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "JSL指文字",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "3456", "--directory", "/Users/murakamimiki/Desktop/JSL_app"],
+      "port": 3456
+    },
+    {
+      "name": "JSL手話認識",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "3457", "--directory", "/Users/murakamimiki/Desktop/JSL_app"],
+      "port": 3457,
+      "indexPath": "/jsl_sign.html"
+    },
+    {
+      "name": "JSL手話会話",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "3458", "--directory", "/Users/murakamimiki/Desktop/JSL_app"],
+      "port": 3458,
+      "indexPath": "/jsl_conversation.html"
+    }
+  ]
+}

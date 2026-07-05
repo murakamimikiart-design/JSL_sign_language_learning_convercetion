@@ -17,7 +17,7 @@ import json, datetime, sys, os
 
 # ── 設定 ───────────────────────────────────────
 BASE_DIR   = "/Users/murakamimiki/Desktop/JSL_app"
-VIDEO_PATH = "/Users/murakamimiki/Downloads/全国手話検定試験　５級　手話を覚えてみよう！.mp4"
+VIDEO_PATH = "/Users/murakamimiki/Desktop/JSL_app/全国手話検定試験　５級　手話を覚えてみよう！.mp4"
 OUTPUT     = f"{BASE_DIR}/training_from_video.json"
 
 HAND_MODEL = f"{BASE_DIR}/hand_landmarker.task"

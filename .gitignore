@@ -1,6 +1,9 @@
 # MediaPipe モデルファイル（大容量）
 *.task
 
+# VRMアバターモデル（大容量・個人所有アセット）
+*.vrm
+
 # 動画ファイル
 *.mp4
 
@@ -10,6 +13,10 @@ training_from_video.json
 
 # XR関連（別プロジェクト）
 XR-MIRROR-01-main/
+XR-MIRROR-01-main.zip
+
+# Claude Codeのローカル設定（個人環境依存）
+.claude/settings.local.json
 
 # macOS
 .DS_Store
