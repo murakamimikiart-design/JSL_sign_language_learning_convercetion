@@ -24,7 +24,10 @@
     background: var(--paper);
     color: var(--ink);
     font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
-    padding: 48px 20px 80px;
+    padding: calc(48px + env(safe-area-inset-top, 0px)) 20px 80px;
+  }
+  @media (max-width: 600px) {
+    body { padding-top: calc(86px + env(safe-area-inset-top, 0px)); }
   }
   .wrap { max-width: 560px; margin: 0 auto; }
   h1 {
